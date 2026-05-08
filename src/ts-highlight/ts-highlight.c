@@ -248,12 +248,12 @@ bool __tshl_eval_predicate(TSQuery* q, const TSQueryPredicateStep* steps, uint32
 		}
 	} else if (cbuild_sv_cmp(func, cbuild_sv_from_lit("eq")) == 0) {
 		cbuild_sv_t left = __tshl_predicate_step_as_string(q, steps[(*ip)++], captures, text);
-		cbuild_sv_t right = __tshl_predicate_step_as_string(q, steps[(*ip)++], captures, text);
 		if (left.data == NULL) {
 			cbuild_log_error("Invalid arguments to '#eq?'.");
 			ret = false;
 			goto defer;
 		}
+		cbuild_sv_t right = __tshl_predicate_step_as_string(q, steps[(*ip)++], captures, text);
 		if (right.data == NULL) {
 			cbuild_log_error("Invalid arguments to '#eq?'.");
 			ret = false;
