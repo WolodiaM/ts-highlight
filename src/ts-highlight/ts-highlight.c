@@ -175,8 +175,26 @@ cbuild_sv_t __tshl_predicate_get_string(TSQuery* q, TSQueryPredicateStep st) {
 	const char* data = ts_query_string_value_for_id(q, st.value_id, &len);
 	return cbuild_sv_from_parts(data, len);
 }
+cbuild_sv_t __tshl_predicate_get_capture(TSQuery* q, TSQueryPredicateStep st, tshl_captures_t* captures, cbuild_sv_t text) {
+	if (st.type != TSQueryPredicateStepTypeString) {
+		return (cbuild_sv_t){0};
+	}
+	uint32_t len = 0;
+	const char* data = ts_query_capture_name_for_id(q, st.value_id, &len);
+	cbuild_sv_t sv = cbuild_sv_from_parts(data, len);
+	cbuild_da_foreach(*captures, c) {
+		if (cbuild_sv_cmp(c->name, sv) == 0) return __tshl_capture_get_sv(*c, text);
+	}
+	return (cbuild_sv_t){0};
+}
+cbuild_sv_t __tshl_predicate_step_as_string(TSQuery* q, TSQueryPredicateStep st, tshl_captures_t* captures, cbuild_sv_t text) {
+	if (st.type == TSQueryPredicateStepTypeString) {
+		return __tshl_predicate_get_string(q, st);
+	}
+	return __tshl_predicate_get_capture(q, st, captures, text);
+}
 // NOTE: Assumes that steps end with DONE
-bool __tshl_eval_predicate(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, tshl_captures_t* captures) {
+bool __tshl_eval_predicate(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, tshl_captures_t* captures, cbuild_sv_t text) {
 	bool ret = true;
 	cbuild_sv_t func = __tshl_predicate_get_string(q, steps[(*ip)++]);
 	if (func.data == NULL) {
@@ -228,6 +246,20 @@ bool __tshl_eval_predicate(TSQuery* q, const TSQueryPredicateStep* steps, uint32
 		} else {
 			cbuild_log_warn("Invalid '#set!' directive.");
 		}
+	} else if (cbuild_sv_cmp(func, cbuild_sv_from_lit("eq")) == 0) {
+		cbuild_sv_t left = __tshl_predicate_step_as_string(q, steps[(*ip)++], captures, text);
+		cbuild_sv_t right = __tshl_predicate_step_as_string(q, steps[(*ip)++], captures, text);
+		if (left.data == NULL) {
+			cbuild_log_error("Invalid arguments to '#eq?'.");
+			ret = false;
+			goto defer;
+		}
+		if (right.data == NULL) {
+			cbuild_log_error("Invalid arguments to '#eq?'.");
+			ret = false;
+			goto defer;
+		}
+		if (cbuild_sv_cmp(left, right) != 0) ret = false;
 	} else {
 		cbuild_log_warn("Unimplemented predicate: '"CBuildSVFmt"'", CBuildSVArg(func));
 	}
@@ -235,10 +267,10 @@ defer:
 	while (steps[(*ip)++].type != TSQueryPredicateStepTypeDone);
 	return ret;
 }
-bool __tshl_eval_predicates(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t step_count, tshl_captures_t* captures) {
+bool __tshl_eval_predicates(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t step_count, tshl_captures_t* captures, cbuild_sv_t text) {
 	uint32_t ip = 0;
 	bool ret = true;
-	while (ip < step_count) ret &= __tshl_eval_predicate(q, steps, &ip, captures);	
+	while (ip < step_count) ret &= __tshl_eval_predicate(q, steps, &ip, captures, text);	
 	return ret;
 }
 void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, uint32_t offset, enum tshl_style_t* atrib) {
@@ -304,7 +336,7 @@ void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, uint32_t
 		uint32_t step_count = 0;
 		predicate = ts_query_predicates_for_pattern(q->hl, match.pattern_index, &step_count);
 		if (predicate != NULL) {
-			valid = __tshl_eval_predicates(q->hl, predicate, step_count, &captures);
+			valid = __tshl_eval_predicates(q->hl, predicate, step_count, &captures, text);
 		}
 		if (valid) {
 			cbuild_da_foreach(captures, capt) {
@@ -343,7 +375,7 @@ void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, uint32_t
 			uint32_t step_count = 0;
 			predicate = ts_query_predicates_for_pattern(q->inj, match.pattern_index, &step_count);
 			if (predicate != NULL) {
-				valid = __tshl_eval_predicates(q->inj, predicate, step_count, &captures);
+				valid = __tshl_eval_predicates(q->inj, predicate, step_count, &captures, text);
 			}
 			if (valid) {
 				cbuild_sv_t inj_lang = {0};
