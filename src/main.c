@@ -4,11 +4,12 @@
 #include "../cbuild.h"
 #include "stdio.h"
 #include "tree_sitter/api.h"
-#include "ts-highlight/ts-highlight.h"
+#include "ts-highlight.h"
+#define CBUILD_IMPLEMENTATION
+#include "../cbuild.h"
 
-#define PREFIX "/home/wolodiam/.local/share/nvim/site"
 TSLanguage* load_parser(cbuild_sv_t language) {
-	const char* lib = cbuild_temp_sprintf(PREFIX"/parser/"CBuildSVFmt".so", CBuildSVArg(language));
+	const char* lib = cbuild_temp_sprintf("%s/.local/share/nvim/site/parser/"CBuildSVFmt".so", getenv("HOME"), CBuildSVArg(language));
 	void* handle = cbuild_dlib_open(lib, false);
 	if (handle == NULL) return NULL;
 	TSLanguage* (*fn)(void) = dlsym(handle, cbuild_temp_sprintf("tree_sitter_"CBuildSVFmt, CBuildSVArg(language)));
@@ -16,7 +17,7 @@ TSLanguage* load_parser(cbuild_sv_t language) {
 	return fn();
 }
 const char* get_query_dir(cbuild_sv_t language) {
-	return cbuild_temp_sprintf(PREFIX"/queries/"CBuildSVFmt, CBuildSVArg(language));
+	return cbuild_temp_sprintf("%s/.local/share/nvim/site/queries/"CBuildSVFmt, getenv("HOME"), CBuildSVArg(language));
 }
 int main(int argc, char** argv) {
 	cbuild_sb_t sb = {0};
@@ -24,14 +25,16 @@ int main(int argc, char** argv) {
 	const char* file = cbuild_shift(argv, argc);
 	if (!cbuild_file_read(file, &sb)) return 1;
 	tshl_t tshl = tshl_init(load_parser, get_query_dir);
-	tshl_spans_t spans = tshl_highlight(&tshl, cbuild_sv_from_sb(sb), cbuild_sv_from_lit("markdown"));
-	printf("Generated %zu spans.\n", spans.size);
-	cbuild_da_foreach(spans, span) {
-		printf("Span '"CBuildSVFmt"' with style '%s'\n",
-			CBuildSVArg(span->text), tshl_style_to_name(span->style));
+	tshl_metadata_t* meta = tshl_highlight(&tshl, cbuild_sv_from_sb(sb), cbuild_sv_from_lit("markdown"));
+	enum tshl_style_t curr = meta[0].style;
+	printf("Span '");
+	for (size_t i = 0; i < sb.size; i++) {
+		if (curr != meta[i].style) {
+			printf("' with style %s.\n", tshl_style_to_name(curr));
+			printf("Span '");
+		}
+		curr = meta[i].style;
+		printf("%c", sb.data[i]);
 	}
 	return 0;
 }
-#include "ts-highlight/ts-highlight.c"
-#define CBUILD_IMPLEMENTATION
-#include "../cbuild.h"

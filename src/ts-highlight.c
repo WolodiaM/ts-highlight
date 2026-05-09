@@ -2,7 +2,7 @@
 //!
 //! License: GPL-3.0-or-later
 
-#include "../../cbuild.h"
+#include "../cbuild.h"
 #include "ts-highlight.h"
 #include "tree_sitter/api.h"
 
@@ -137,25 +137,6 @@ tshl_t tshl_init(tshl_load_parser lp, tshl_get_query_dir gqd) {
 	self.parser = ts_parser_new();
 	return self;
 }
-tshl_spans_t __tshl_buffers_to_spans(cbuild_sv_t text, enum tshl_style_t* atrib) {
-	tshl_spans_t spans = {0};
-	enum tshl_style_t curr = atrib[0];
-	tshl_span_t span = {0};
-	span.text.data = text.data;
-	span.style = atrib[0];
-	for (size_t i = 0; i < text.size; i++) {
-		if (curr != atrib[i]) {
-			cbuild_da_append(&spans, span);
-			span.text.data = &text.data[i];
-			span.text.size = 0;
-			span.style = atrib[i];
-		}
-		curr = atrib[i];
-		span.text.size++;
-	}
-	cbuild_da_append(&spans, span);
-	return spans;
-}
 typedef struct {
 	uint32_t start;
 	uint32_t end;
@@ -194,7 +175,7 @@ cbuild_sv_t __tshl_predicate_step_as_string(TSQuery* q, TSQueryPredicateStep st,
 	return __tshl_predicate_get_capture(q, st, captures, text);
 }
 // NOTE: Assumes that steps end with DONE
-bool __tshl_eval_predicate(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, tshl_captures_t* captures, cbuild_sv_t text) {
+bool __tshl_eval_predicate(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, tshl_captures_t* captures, cbuild_sv_t text, tshl_metadata_t* meta) {
 	bool ret = true;
 	cbuild_sv_t func = __tshl_predicate_get_string(q, steps[(*ip)++]);
 	if (func.data == NULL) {
@@ -267,13 +248,13 @@ defer:
 	while (steps[(*ip)++].type != TSQueryPredicateStepTypeDone);
 	return ret;
 }
-bool __tshl_eval_predicates(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t step_count, tshl_captures_t* captures, cbuild_sv_t text) {
+bool __tshl_eval_predicates(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t step_count, tshl_captures_t* captures, cbuild_sv_t text, tshl_metadata_t* meta) {
 	uint32_t ip = 0;
 	bool ret = true;
-	while (ip < step_count) ret &= __tshl_eval_predicate(q, steps, &ip, captures, text);	
+	while (ip < step_count) ret &= __tshl_eval_predicate(q, steps, &ip, captures, text, meta);	
 	return ret;
 }
-void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, uint32_t offset, enum tshl_style_t* atrib) {
+void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, uint32_t offset, tshl_metadata_t* meta) {
 	// Setup
 	size_t checkpoint = cbuild_temp_checkpoint();
 	tshl_language_map_entry_t* p = cbuild_map_get(&self->languages, lang);
@@ -336,7 +317,7 @@ void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, uint32_t
 		uint32_t step_count = 0;
 		predicate = ts_query_predicates_for_pattern(q->hl, match.pattern_index, &step_count);
 		if (predicate != NULL) {
-			valid = __tshl_eval_predicates(q->hl, predicate, step_count, &captures, text);
+			valid = __tshl_eval_predicates(q->hl, predicate, step_count, &captures, text, meta);
 		}
 		if (valid) {
 			cbuild_da_foreach(captures, capt) {
@@ -346,7 +327,7 @@ void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, uint32_t
 				if (capt->name.data[0] == '_') continue;
 				enum tshl_style_t style = tshl_name_to_style(capt->name);
 				for (uint32_t i = capt->start; i < capt->end; i++) {
-					atrib[offset+i] = style;
+					meta[offset+i].style = style;
 				}
 			}
 		}
@@ -375,7 +356,7 @@ void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, uint32_t
 			uint32_t step_count = 0;
 			predicate = ts_query_predicates_for_pattern(q->inj, match.pattern_index, &step_count);
 			if (predicate != NULL) {
-				valid = __tshl_eval_predicates(q->inj, predicate, step_count, &captures, text);
+				valid = __tshl_eval_predicates(q->inj, predicate, step_count, &captures, text, meta);
 			}
 			if (valid) {
 				cbuild_sv_t inj_lang = {0};
@@ -389,7 +370,7 @@ void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, uint32_t
 						inj_text = __tshl_capture_get_sv(*capt, text);
 					}
 				}
-				__tshl_highlight(self, inj_text, inj_lang, inj_offset, atrib);
+				__tshl_highlight(self, inj_text, inj_lang, inj_offset, meta);
 			}
 		}
 	}
@@ -397,12 +378,12 @@ void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, uint32_t
 	ts_tree_delete(tree);
 	cbuild_temp_reset(checkpoint);
 }
-tshl_spans_t tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang) {
-	enum tshl_style_t* atrib = malloc(sizeof(enum tshl_style_t)*text.size);
-	memset(atrib, 0, sizeof(enum tshl_style_t)*text.size);
-	cbuild_assert(atrib != NULL, "Allocation failed.");
-	__tshl_highlight(self, text, lang, 0, atrib);
-	return __tshl_buffers_to_spans(text, atrib);
+tshl_metadata_t* tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang) {
+	tshl_metadata_t* meta = malloc(sizeof(tshl_metadata_t)*text.size);
+	memset(meta, 0, sizeof(tshl_metadata_t)*text.size);
+	cbuild_assert(meta!= NULL, "Allocation failed.");
+	__tshl_highlight(self, text, lang, 0, meta);
+	return meta;
 }
 #pragma region tshl_style_to_name
 const char* tshl_style_to_name(enum tshl_style_t style) {

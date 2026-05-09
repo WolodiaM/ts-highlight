@@ -5,7 +5,7 @@
 #ifndef __TSHL_H__
 #define __TSHL_H__
 
-#include "../../cbuild.h"
+#include "../cbuild.h"
 #include "tree_sitter/api.h"
 
 typedef TSLanguage* (*tshl_load_parser)(cbuild_sv_t language);
@@ -24,8 +24,8 @@ typedef struct tshl_t {
 	tshl_get_query_dir get_query_dir;
 } tshl_t;
 
-typedef struct tshl_span_t {
-	cbuild_sv_t text;
+typedef struct tshl_metadata_t {
+	#pragma region tshl_style_t
 	enum tshl_style_t : uint8_t { // Taken from 'https://neovim.io/doc/user/treesitter/#treesitter-highlight-groups'
 		TSHL_DEFAULT = 0,                 // Default, empty style (plain text)
 		TSHL_VARIABLE,                    // various variable names
@@ -119,13 +119,19 @@ typedef struct tshl_span_t {
 		TSHL_TAG_ATTRIBUTE,               // XML-style tag attributes
 		TSHL_TAG_DELIMITER,               // XML-style tag delimiters
 	} style;
-} tshl_span_t;
-
-typedef cbuild_da_new(tshl_span_t) tshl_spans_t;
+	#pragma endregion
+	// uint8_t __padding;
+	// Bit 0-7  - conceal character
+	// Bit 8    - part of url
+	// Bit 9-15 - unused
+	uint16_t flags;
+} tshl_metadata_t;
 
 tshl_t tshl_init(tshl_load_parser load_parser, tshl_get_query_dir get_query_dir);
-tshl_spans_t tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang);
+// Return array is allocated via 'malloc' and its size is same as 'text.size'.
+tshl_metadata_t* tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang);
 const char* tshl_style_to_name(enum tshl_style_t style);
 enum tshl_style_t tshl_name_to_style(cbuild_sv_t name);
 
 #endif // __TSHL_H__
+/* vim: set foldmethod=marker foldmarker=#pragma\ region,#pragma\ endregion : */
