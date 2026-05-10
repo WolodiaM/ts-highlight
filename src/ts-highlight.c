@@ -278,9 +278,44 @@ bool __tshl_predicate_set(TSQuery* q, const TSQueryPredicateStep* steps, uint32_
 		// TODO: Implement this. And it can use capture as a value...
 	} else if (cbuild_sv_cmp(var, cbuild_sv_from_lit("bo.commentstring")) == 0) {
 		// Nothing to do here. This is just renderer
+	} else if (cbuild_sv_cmp(var, cbuild_sv_from_lit("conceal")) == 0) {
+		// TODO: Implement this.
+	} else if (cbuild_sv_cmp(var, cbuild_sv_from_lit("conceal_lines")) == 0) {
+		// TODO: Implement this.
+	} else if (cbuild_sv_cmp(var, cbuild_sv_from_lit("injection.include-children")) == 0) {
+		// TODO: Implement this.
 	} else {
 		cbuild_log_error("Invalid variables for 'set!' - '"CBuildSVFmt"'.", CBuildSVArg(var));
 		return false;
+	}
+	return true;
+}
+// Signature: 'offset! [capture] [string] [string] [string] [string]'
+bool __tshl_predicate_offset(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text) {
+	cbuild_sv_t c = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "offset!", 1);
+	int st_row = atoi(cbuild_sv_to_temp_cstr(
+			__tshl_predicate_get_string(q, steps[(*ip)++], "offset!", 2)));
+	int st_col = atoi(cbuild_sv_to_temp_cstr(
+			__tshl_predicate_get_string(q, steps[(*ip)++], "offset!", 3)));
+	int end_row = atoi(cbuild_sv_to_temp_cstr(
+			__tshl_predicate_get_string(q, steps[(*ip)++], "offset!", 4)));
+	int end_col = atoi(cbuild_sv_to_temp_cstr(
+			__tshl_predicate_get_string(q, steps[(*ip)++], "offset!", 5)));
+	cbuild_da_foreach(*captures, capt) {
+		if (cbuild_sv_cmp(c, capt->name) == 0) {
+			cbuild_sv_t t = cbuild_sv_from_parts(&text.data[capt->start], capt->end - capt->start);
+			int st_accum = st_col, end_accum = st_row;
+			for (; st_row > 0; st_row--) {
+				st_accum += ((int)cbuild_sv_chop_by_delim(&t, '\n').size + 1);
+			}
+			st_accum += st_col;
+			for (; end_row < 0; end_row++) {
+				end_accum += ((int)cbuild_sv_chop_right_by_delim(&t, '\n').size + 1);
+			}
+			end_accum += end_col;
+			capt->start = (uint32_t)((int)capt->start + st_accum);
+			capt->end = (uint32_t)((int)capt->end + end_accum);
+		}
 	}
 	return true;
 }
@@ -449,7 +484,7 @@ bool __tshl_predicate_any_of(TSQuery* q, const TSQueryPredicateStep* steps, uint
 	int argidx = 1;
 	cbuild_sv_t node = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "any-of?", argidx++);
 	__tshl_da_sv_t strings = {0};
-	while (steps[(*ip)++].type != TSQueryPredicateStepTypeDone) {
+	while (steps[*ip].type != TSQueryPredicateStepTypeDone) {
 		cbuild_sv_t str = __tshl_predicate_get_string(q, steps[(*ip)++], "any-of?", argidx++);
 		cbuild_da_append(&strings, str);
 	}
@@ -472,7 +507,7 @@ bool __tshl_predicate_has_parent(TSQuery* q, const TSQueryPredicateStep* steps, 
 	int argidx = 1;
 	cbuild_sv_t node = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "has-parent?", argidx++);
 	__tshl_da_sv_t strings = {0};
-	while (steps[(*ip)++].type != TSQueryPredicateStepTypeDone) {
+	while (steps[*ip].type != TSQueryPredicateStepTypeDone) {
 		cbuild_sv_t str = __tshl_predicate_get_string(q, steps[(*ip)++], "has-parent?", argidx++);
 		cbuild_da_append(&strings, str);
 	}
@@ -500,7 +535,7 @@ bool __tshl_predicate_has_ancestor(TSQuery* q, const TSQueryPredicateStep* steps
 	int argidx = 1;
 	cbuild_sv_t node = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "has-ancestor?", argidx++);
 	__tshl_da_sv_t strings = {0};
-	while (steps[(*ip)++].type != TSQueryPredicateStepTypeDone) {
+	while (steps[*ip].type != TSQueryPredicateStepTypeDone) {
 		cbuild_sv_t str = __tshl_predicate_get_string(q, steps[(*ip)++], "has-ancestor?", argidx++);
 		cbuild_da_append(&strings, str);
 	}
@@ -528,6 +563,14 @@ struct {
 	bool (*eval)(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text);
 } __TSHL_PREDICATES[] = {
 	{
+		.name = cbuild_sv_from_lit("set!"),
+		.eval = __tshl_predicate_set,
+	},
+	{
+		.name = cbuild_sv_from_lit("offset!"),
+		.eval = __tshl_predicate_offset,
+	},
+	{
 		.name = cbuild_sv_from_lit("eq?"),
 		.eval = __tshl_predicate_eq,
 	},
@@ -554,10 +597,6 @@ struct {
 	{
 		.name = cbuild_sv_from_lit("has-ancestor?"),
 		.eval = __tshl_predicate_has_ancestor,
-	},
-	{
-		.name = cbuild_sv_from_lit("set!"),
-		.eval = __tshl_predicate_set,
 	},
 };
 bool __tshl_eval_predicate(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text) {
@@ -622,6 +661,11 @@ void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, uint32_t
 		NULL,
 		text.data,
 		(uint32_t)text.size);
+	if (tree == NULL) {
+		cbuild_log_error("Failed to parse '"CBuildSVFmt"'.", CBuildSVArg(lang));
+		cbuild_temp_reset(checkpoint);
+		return;
+	}
 	TSNode root = ts_tree_root_node(tree);
 	TSQueryCursor* c = ts_query_cursor_new();
 	// Highlight queries
