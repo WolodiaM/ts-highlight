@@ -1,20 +1,21 @@
 //! Markdown->ANSI converter using tree-sitter
 //!
 //! License: GPL-3.0-or-later
-
 #include "../cbuild.h"
 #include "ts-highlight.h"
 #include "tree_sitter/api.h"
-
+////////////////////////////////////////////////////////////////////////////////
+// Helpers for hashmaps
+////////////////////////////////////////////////////////////////////////////////
 typedef struct {
 	cbuild_sv_t key;
 	TSLanguage* lang;
-} tshl_language_map_entry_t;
+} __tshl_language_map_entry_t;
 typedef struct {
 	cbuild_sv_t key;
 	TSQuery* hl;
 	TSQuery* inj;
-} tshl_query_map_entry_t;
+} __tshl_query_map_entry_t;
 size_t __tshl_map_hash(const void* map, const void* key) {
 	CBUILD_UNUSED(map);
 	cbuild_sv_t* k = (cbuild_sv_t*)key;
@@ -26,11 +27,13 @@ bool __tshl_map_keycmp(const void* map, const void* k1, const void* k2) {
 	cbuild_sv_t* key2 = (cbuild_sv_t*)k2;
 	return cbuild_sv_cmp(*key1, *key2) == 0;
 }
-
+////////////////////////////////////////////////////////////////////////////////
+// Helpers for parser loading
+////////////////////////////////////////////////////////////////////////////////
 static bool __tshl_load_parser(tshl_t* self, cbuild_sv_t language) {
 	TSLanguage* lang = self->load_parser(language);
 	if (lang == NULL) return false;
-	tshl_language_map_entry_t* hs_elem = cbuild_map_get_or_alloc(&self->languages, language);
+	__tshl_language_map_entry_t* hs_elem = cbuild_map_get_or_alloc(&self->languages, language);
 	hs_elem->key.size = language.size;
 	hs_elem->key.data = cbuild_arena_memdup(&self->stringstore, language.data, language.size);
 	hs_elem->lang = lang;
@@ -65,7 +68,7 @@ static const char* tshl_query_err_to_str(TSQueryError err) {
 }
 #pragma endregion
 static bool __tshl_load_queries(tshl_t* self, cbuild_sv_t language) {
-	TSLanguage* l = ((tshl_language_map_entry_t*)cbuild_map_get(&self->languages, language))->lang;
+	TSLanguage* l = ((__tshl_language_map_entry_t*)cbuild_map_get(&self->languages, language))->lang;
 	const char* q = self->get_query_dir(language);
 	cbuild_sb_t file = {0};
 	if (!cbuild_file_read(
@@ -105,13 +108,16 @@ static bool __tshl_load_queries(tshl_t* self, cbuild_sv_t language) {
 		}
 	}
 	cbuild_sb_clear(&file);
-	tshl_query_map_entry_t* hs_elem = cbuild_map_get_or_alloc(&self->queries, language);
+	__tshl_query_map_entry_t* hs_elem = cbuild_map_get_or_alloc(&self->queries, language);
 	hs_elem->key.size = language.size;
 	hs_elem->key.data = cbuild_arena_memdup(&self->stringstore, language.data, language.size);
 	hs_elem->hl = hl;
 	hs_elem->inj = inj;
 	return true;
 }
+////////////////////////////////////////////////////////////////////////////////
+// Initialization
+////////////////////////////////////////////////////////////////////////////////
 tshl_t tshl_init(tshl_load_parser lp, tshl_get_query_dir gqd) {
 	tshl_t self = {0};
 	// Save callbacks
@@ -120,14 +126,14 @@ tshl_t tshl_init(tshl_load_parser lp, tshl_get_query_dir gqd) {
 	// Initialize arena
 	cbuild_arena_base_malloc(&self.stringstore, CBUILD_TEMP_ARENA_SIZE);
 	// Initialize languages hashmap. I do not expect more than 20 languages per session.
-	self.languages.elem_size = sizeof(tshl_language_map_entry_t);
+	self.languages.elem_size = sizeof(__tshl_language_map_entry_t);
 	self.languages.key_size = sizeof(cbuild_sv_t);
 	self.languages.hash_func = __tshl_map_hash;
 	self.languages.keycmp_func = __tshl_map_keycmp;
 	// hash, key compare and clear are default ones
 	cbuild_map_init(&self.languages, 20);
 	// Initialize queries hashmap. I do not expect more than 20 languages per session.
-	self.queries.elem_size = sizeof(tshl_query_map_entry_t);
+	self.queries.elem_size = sizeof(__tshl_query_map_entry_t);
 	self.queries.key_size = sizeof(cbuild_sv_t);
 	self.queries.hash_func = __tshl_map_hash;
 	self.queries.keycmp_func = __tshl_map_keycmp;
@@ -137,127 +143,187 @@ tshl_t tshl_init(tshl_load_parser lp, tshl_get_query_dir gqd) {
 	self.parser = ts_parser_new();
 	return self;
 }
+////////////////////////////////////////////////////////////////////////////////
+// Helpers for parsing
+////////////////////////////////////////////////////////////////////////////////
 typedef struct {
 	uint32_t start;
 	uint32_t end;
+	uint32_t priority;
 	cbuild_sv_t val; // If data != NULL overrides '[start:end)' range
 	cbuild_sv_t name;
-} tshl_capture_t;
-cbuild_sv_t __tshl_capture_get_sv(tshl_capture_t capt, cbuild_sv_t text) {
+	TSNode node;
+} __tshl_capture_t;
+cbuild_sv_t __tshl_capture_get_sv(__tshl_capture_t capt, cbuild_sv_t text) {
 	if (capt.val.data != NULL) return capt.val;
 	return cbuild_sv_from_parts(text.data + capt.start, capt.end - capt.start);
 }
-typedef cbuild_da_new(tshl_capture_t) tshl_captures_t;
-cbuild_sv_t __tshl_predicate_get_string(TSQuery* q, TSQueryPredicateStep st) {
+typedef cbuild_da_new(__tshl_capture_t) __tshl_captures_t;
+////////////////////////////////////////////////////////////////////////////////
+// Predicate evaluation
+////////////////////////////////////////////////////////////////////////////////
+cbuild_sv_t __tshl_predicate_get_string(TSQuery* q, TSQueryPredicateStep st,
+	const char* cmd, int idx) {
 	if (st.type != TSQueryPredicateStepTypeString) {
+		cbuild_log_error("Invalid argument %d to command '%s' - string expected.", idx, cmd);
 		return (cbuild_sv_t){0};
 	}
 	uint32_t len = 0;
 	const char* data = ts_query_string_value_for_id(q, st.value_id, &len);
 	return cbuild_sv_from_parts(data, len);
 }
-cbuild_sv_t __tshl_predicate_get_capture(TSQuery* q, TSQueryPredicateStep st, tshl_captures_t* captures, cbuild_sv_t text) {
-	if (st.type != TSQueryPredicateStepTypeString) {
+cbuild_sv_t __tshl_predicate_get_capture_name(TSQuery* q, TSQueryPredicateStep st,
+	const char* cmd, int idx) {
+	if (st.type != TSQueryPredicateStepTypeCapture) {
+		cbuild_log_error("Invalid argument %d to command '%s' - capture expected.", idx, cmd);
 		return (cbuild_sv_t){0};
 	}
 	uint32_t len = 0;
 	const char* data = ts_query_capture_name_for_id(q, st.value_id, &len);
-	cbuild_sv_t sv = cbuild_sv_from_parts(data, len);
+	return cbuild_sv_from_parts(data, len);
+}
+__tshl_capture_t* __tshl_predicate_get_capture(TSQuery* q, TSQueryPredicateStep st,
+	__tshl_captures_t* captures, const char* cmd, int idx) {
+	cbuild_sv_t sv = __tshl_predicate_get_capture_name(q, st, cmd, idx);
+	if (sv.data == NULL) return NULL;
 	cbuild_da_foreach(*captures, c) {
-		if (cbuild_sv_cmp(c->name, sv) == 0) return __tshl_capture_get_sv(*c, text);
+		if (cbuild_sv_cmp(c->name, sv) == 0) return c;
 	}
-	return (cbuild_sv_t){0};
+	return NULL;
 }
-cbuild_sv_t __tshl_predicate_step_as_string(TSQuery* q, TSQueryPredicateStep st, tshl_captures_t* captures, cbuild_sv_t text) {
-	if (st.type == TSQueryPredicateStepTypeString) {
-		return __tshl_predicate_get_string(q, st);
+// Signature: 'set! [capture]? [string] [string]'
+bool __tshl_predicate_set(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text) {
+	CBUILD_UNUSED(text);
+	int argid = 1;
+	__tshl_capture_t* c = NULL; // This is used only with 'url' and 'bo.commentstring'
+	if (steps[*ip].type == TSQueryPredicateStepTypeCapture) {
+		c = __tshl_predicate_get_capture(q, steps[(*ip)++], captures, "set!", argid++);
 	}
-	return __tshl_predicate_get_capture(q, st, captures, text);
+	CBUILD_UNUSED(c);
+	cbuild_sv_t var = __tshl_predicate_get_string(q, steps[(*ip)++], "set!", argid++);
+	if (cbuild_sv_cmp(var, cbuild_sv_from_lit("injection.language")) == 0) {
+		cbuild_sv_t val = __tshl_predicate_get_string(q, steps[(*ip)++], "set!", argid++);
+		bool found = false;
+		cbuild_da_foreach(*captures, capt) {
+			if (cbuild_sv_cmp(val, capt->name) == 0) {
+				capt->val = val;
+				found = true;
+			}
+		}
+		if (!found) {
+			__tshl_capture_t capt = {
+				.val = val,
+				.name = var,
+				.priority = 100,
+			};
+			cbuild_da_append(captures, capt);
+		}
+	} else if (cbuild_sv_cmp(var, cbuild_sv_from_lit("priority")) == 0) {
+		cbuild_sv_t val = __tshl_predicate_get_string(q, steps[(*ip)++], "set!", argid++);
+		unsigned int priority = (unsigned int)atoi(cbuild_sv_to_temp_cstr(val));
+		cbuild_da_foreach(*captures, capt) {
+			capt->priority = priority;
+		}
+	} else if	(cbuild_sv_cmp(var, cbuild_sv_from_lit("url")) == 0) {
+		// TODO: Implement this. And it can use capture as a value...
+	} else if (cbuild_sv_cmp(var, cbuild_sv_from_lit("bo.commentstring")) == 0) {
+		// Nothing to do here. This is just renderer
+	} else {
+		cbuild_log_error("Invalid variables for 'set!' - '"CBuildSVFmt"'.", CBuildSVArg(var));
+		return false;
+	}
+	return true;
 }
-// NOTE: Assumes that steps end with DONE
-bool __tshl_eval_predicate(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, tshl_captures_t* captures, cbuild_sv_t text, tshl_metadata_t* meta) {
+// Signature: 'eq? [string|capture] [string|capture]'
+bool __tshl_predicate_eq(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text) {
+	cbuild_sv_t c1 = {0};
+	if (steps[*ip].type == TSQueryPredicateStepTypeString) {
+		cbuild_sv_t base = __tshl_predicate_get_string(q, steps[(*ip)++], "eq?", 1);
+		c1 = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "eq?", 2);
+		cbuild_da_foreach(*captures, capt) {
+			if (cbuild_sv_cmp(c1, capt->name) == 0) {
+				if (cbuild_sv_cmp(base, __tshl_capture_get_sv(*capt, text)) != 0) {
+					return false;
+				}
+			}
+		}
+	}
+	c1 = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "eq?", 1);
+	if (steps[*ip].type == TSQueryPredicateStepTypeString) {
+		cbuild_sv_t base = __tshl_predicate_get_string(q, steps[(*ip)++], "eq?", 2);
+		cbuild_da_foreach(*captures, capt) {
+			if (cbuild_sv_cmp(c1, capt->name) == 0) {
+				if (cbuild_sv_cmp(base, __tshl_capture_get_sv(*capt, text)) != 0) {
+					return false;
+				}
+			}
+		}
+	}
+	cbuild_sv_t c2 = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "eq?", 2);
+	cbuild_da_foreach(*captures, capt1) {
+		if (cbuild_sv_cmp(c1, capt1->name) == 0) {
+			cbuild_da_foreach(*captures, capt2) {
+				if (cbuild_sv_cmp(c2, capt2->name) == 0) {
+					if (cbuild_sv_cmp(__tshl_capture_get_sv(*capt1, text),
+							__tshl_capture_get_sv(*capt2, text)) != 0) {
+						return false;
+					}
+				}
+			}
+		}
+	}
+	return true;
+}
+struct {
+	cbuild_sv_t name;
+	bool (*eval)(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text);
+} __TSHL_PREDICATES[] = {
+	{
+		.name = cbuild_sv_from_lit("set!"),
+		.eval = __tshl_predicate_set,
+	},
+	{
+		.name = cbuild_sv_from_lit("eq?"),
+		.eval = __tshl_predicate_eq,
+	},
+};
+bool __tshl_eval_predicate(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text) {
 	bool ret = true;
-	cbuild_sv_t func = __tshl_predicate_get_string(q, steps[(*ip)++]);
+	cbuild_sv_t func = __tshl_predicate_get_string(q, steps[(*ip)++], "???", 0);
 	if (func.data == NULL) {
 		cbuild_log_error("Predicate does not start from function name.");
 		ret = false;
-		goto defer;
-	}
-	if (cbuild_sv_cmp(func, cbuild_sv_from_lit("set!")) == 0) {
-		TSQueryPredicateStep st = steps[(*ip)++];
-		if (st.type == TSQueryPredicateStepTypeString) {
-			cbuild_sv_t var = __tshl_predicate_get_string(q, st);
-			if (var.data == NULL) {
-				cbuild_log_error("Predicate '#set!' is not followed by variable name.");
-				ret = false;
-				goto defer;
-			}
-			if (cbuild_sv_cmp(var, cbuild_sv_from_lit("injection.language")) == 0) {
-				cbuild_sv_t val = __tshl_predicate_get_string(q, steps[(*ip)++]);
-				if (val.data == NULL) {
-					cbuild_log_error("Predicate '#set! injection.language' is not followed by value"); 
-					ret = false;
-					goto defer;
-				}
-				bool found = false;
-				cbuild_da_foreach(*captures, capt) {
-					if (cbuild_sv_cmp(capt->name, cbuild_sv_from_lit("injection.language")) == 0) {
-						capt->val = val;
-						found = true;
-						break;
-					}
-				}
-				if (!found) {
-					tshl_capture_t capt = {0};
-					capt.name = cbuild_sv_from_lit("injection.language");
-					capt.val = val;
-					cbuild_da_append(captures, capt);
-				}
-			} else if (cbuild_sv_cmp(var, cbuild_sv_from_lit("conceal")) == 0) {
-				// Nothing to do here
-			} else if (cbuild_sv_cmp(var, cbuild_sv_from_lit("conceal_lines")) == 0) {
-				// Nothing to do here
-			} else {
-				cbuild_log_warn("Unimplemented variable for '#set!': '"CBuildSVFmt"'.\n", CBuildSVArg(var));
-			}
-		} else if (st.type == TSQueryPredicateStepTypeCapture) {
-			// TODO: This is used for changing commentstring and marking things as url:
-			// '(#set! @_hyperlink url @markup.link.url)'.
-			// First argument is a capture, second marks it as url and thirrd "renames" capture.
-		} else {
-			cbuild_log_warn("Invalid '#set!' directive.");
-		}
-	} else if (cbuild_sv_cmp(func, cbuild_sv_from_lit("eq")) == 0) {
-		cbuild_sv_t left = __tshl_predicate_step_as_string(q, steps[(*ip)++], captures, text);
-		if (left.data == NULL) {
-			cbuild_log_error("Invalid arguments to '#eq?'.");
-			ret = false;
-			goto defer;
-		}
-		cbuild_sv_t right = __tshl_predicate_step_as_string(q, steps[(*ip)++], captures, text);
-		if (right.data == NULL) {
-			cbuild_log_error("Invalid arguments to '#eq?'.");
-			ret = false;
-			goto defer;
-		}
-		if (cbuild_sv_cmp(left, right) != 0) ret = false;
 	} else {
-		cbuild_log_warn("Unimplemented predicate: '"CBuildSVFmt"'", CBuildSVArg(func));
+		bool invert = false;
+		if (cbuild_sv_prefix(func, cbuild_sv_from_lit("not-")) &&
+			cbuild_sv_suffix(func, cbuild_sv_from_lit("?"))) {
+			invert = true;
+			cbuild_sv_chop(&func, 4); // Strip 'not-'
+		}
+		for (size_t i = 0; i < cbuild_arr_len(__TSHL_PREDICATES); i++) {
+			if (cbuild_sv_cmp(func, __TSHL_PREDICATES[i].name) == 0) {
+				if (!__TSHL_PREDICATES[i].eval(q, steps, ip, captures, text)) ret = false;
+				break;
+			}
+		}
+		if (invert) ret = !ret;
 	}
-defer:
 	while (steps[(*ip)++].type != TSQueryPredicateStepTypeDone);
 	return ret;
 }
-bool __tshl_eval_predicates(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t step_count, tshl_captures_t* captures, cbuild_sv_t text, tshl_metadata_t* meta) {
+bool __tshl_eval_predicates(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t step_count, __tshl_captures_t* captures, cbuild_sv_t text) {
 	uint32_t ip = 0;
 	bool ret = true;
-	while (ip < step_count) ret &= __tshl_eval_predicate(q, steps, &ip, captures, text, meta);	
+	while (ip < step_count) ret &= __tshl_eval_predicate(q, steps, &ip, captures, text);	
 	return ret;
 }
+////////////////////////////////////////////////////////////////////////////////
+// Parsing + highlight
+////////////////////////////////////////////////////////////////////////////////
 void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, uint32_t offset, tshl_metadata_t* meta) {
 	// Setup
 	size_t checkpoint = cbuild_temp_checkpoint();
-	tshl_language_map_entry_t* p = cbuild_map_get(&self->languages, lang);
+	__tshl_language_map_entry_t* p = cbuild_map_get(&self->languages, lang);
 	if (p == NULL) {
 		if (!__tshl_load_parser(self, lang)) {
 			cbuild_log_error("Could not load "CBuildSVFmt" parser.", CBuildSVArg(lang));
@@ -286,7 +352,7 @@ void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, uint32_t
 	TSNode root = ts_tree_root_node(tree);
 	TSQueryCursor* c = ts_query_cursor_new();
 	// Highlight queries
-	tshl_query_map_entry_t* q = cbuild_map_get(&self->queries, lang);
+	__tshl_query_map_entry_t* q = cbuild_map_get(&self->queries, lang);
 	if (q == NULL) {
 		ts_query_cursor_delete(c);
 		ts_tree_delete(tree);
@@ -294,7 +360,7 @@ void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, uint32_t
 		return;
 	}
 	TSQueryMatch match = {0};
-	tshl_captures_t captures = {0};
+	__tshl_captures_t captures = {0};
 	ts_query_cursor_exec(c, q->hl, root);
 	while(ts_query_cursor_next_match(c, &match)) {
 		captures.size = 0;
@@ -305,10 +371,12 @@ void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, uint32_t
 			uint32_t start = ts_node_start_byte(capt.node);
 			uint32_t end = ts_node_end_byte(capt.node);
 			cbuild_sv_t st_name = cbuild_sv_from_parts(name, name_len);
-			tshl_capture_t capture = {
+			__tshl_capture_t capture = {
 				.start = start, 
 				.end = end, 
+				.priority = 100,
 				.name = st_name,
+				.node = capt.node,
 			};
 			cbuild_da_append(&captures, capture);
 		}
@@ -317,7 +385,7 @@ void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, uint32_t
 		uint32_t step_count = 0;
 		predicate = ts_query_predicates_for_pattern(q->hl, match.pattern_index, &step_count);
 		if (predicate != NULL) {
-			valid = __tshl_eval_predicates(q->hl, predicate, step_count, &captures, text, meta);
+			valid = __tshl_eval_predicates(q->hl, predicate, step_count, &captures, text);
 		}
 		if (valid) {
 			cbuild_da_foreach(captures, capt) {
@@ -327,7 +395,7 @@ void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, uint32_t
 				if (capt->name.data[0] == '_') continue;
 				enum tshl_style_t style = tshl_name_to_style(capt->name);
 				for (uint32_t i = capt->start; i < capt->end; i++) {
-					meta[offset+i].style = style;
+					meta[offset+i].style[capt->priority - 90] = style;
 				}
 			}
 		}
@@ -344,7 +412,7 @@ void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, uint32_t
 				uint32_t start = ts_node_start_byte(capt.node);
 				uint32_t end = ts_node_end_byte(capt.node);
 				cbuild_sv_t st_name = cbuild_sv_from_parts(name, name_len);
-				tshl_capture_t capture = {
+				__tshl_capture_t capture = {
 					.start = start, 
 					.end = end, 
 					.name = st_name,
@@ -356,7 +424,7 @@ void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, uint32_t
 			uint32_t step_count = 0;
 			predicate = ts_query_predicates_for_pattern(q->inj, match.pattern_index, &step_count);
 			if (predicate != NULL) {
-				valid = __tshl_eval_predicates(q->inj, predicate, step_count, &captures, text, meta);
+				valid = __tshl_eval_predicates(q->inj, predicate, step_count, &captures, text);
 			}
 			if (valid) {
 				cbuild_sv_t inj_lang = {0};
@@ -385,6 +453,9 @@ tshl_metadata_t* tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang
 	__tshl_highlight(self, text, lang, 0, meta);
 	return meta;
 }
+////////////////////////////////////////////////////////////////////////////////
+// Conversions between style as enum and style as string
+////////////////////////////////////////////////////////////////////////////////
 #pragma region tshl_style_to_name
 const char* tshl_style_to_name(enum tshl_style_t style) {
 	switch (style) {	

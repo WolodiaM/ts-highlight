@@ -1,31 +1,37 @@
-//! Markdown->ANSI converter using tree-sitter
+//! Tree-sitter based highlighting. Based on NeoVim queries.
 //!
 //! License: GPL-3.0-or-later
-
 #ifndef __TSHL_H__
 #define __TSHL_H__
-
+// Includes
 #include "../cbuild.h"
 #include "tree_sitter/api.h"
-
+/// Load parser for specific language
 typedef TSLanguage* (*tshl_load_parser)(cbuild_sv_t language);
+/// Load parser for specific language
 typedef const char* (*tshl_get_query_dir)(cbuild_sv_t language);
-
+/// Main object storing tshl state
 typedef struct tshl_t {
 	// Parser
 	TSParser* parser;
 	// Tree-sitter data
-	cbuild_map_t languages; // const char* -> TSLanguage*
-	cbuild_map_t queries;   // const char* -> (TSQuery*, TSQuery*)
+	cbuild_map_t languages; // cbuild_sv_t -> TSLanguage*
+	cbuild_map_t queries;   // cbuild_sv_t -> (TSQuery*, TSQuery*)
 	// For internal string
 	cbuild_arena_t stringstore;
-	// Callbacsk
+	// Callbacks
 	tshl_load_parser load_parser;
 	tshl_get_query_dir get_query_dir;
 } tshl_t;
-
+/// Metadata structure 
+///
+/// * [fl:style] Style for this character
+/// * [fl:conceal] Conceal character (if expected, may be 0 if not replacement provided).
+/// * [fl:flags] Some metadata flags. Unused bits are always set to 0.
+///   - bit 0: character is part of a url
+///   - bit 1: character is concealed
 typedef struct tshl_metadata_t {
-	#pragma region tshl_style_t
+	#pragma region tshl_style_t style[30];
 	enum tshl_style_t : uint8_t { // Taken from 'https://neovim.io/doc/user/treesitter/#treesitter-highlight-groups'
 		TSHL_DEFAULT = 0,                 // Default, empty style (plain text)
 		TSHL_VARIABLE,                    // various variable names
@@ -118,20 +124,25 @@ typedef struct tshl_metadata_t {
 		TSHL_TAG_BUILTIN,                 // builtin tag names (e.g. HTML5 tags)
 		TSHL_TAG_ATTRIBUTE,               // XML-style tag attributes
 		TSHL_TAG_DELIMITER,               // XML-style tag delimiters
-	} style;
+	} style[30];
 	#pragma endregion
-	// uint8_t __padding;
-	// Bit 0-7  - conceal character
-	// Bit 8    - part of url
-	// Bit 9-15 - unused
-	uint16_t flags;
+	uint8_t flags;
+	uint8_t conceal[4]; // utf8
 } tshl_metadata_t;
-
+/// Initialize thsl_t and saves callbacks.
 tshl_t tshl_init(tshl_load_parser load_parser, tshl_get_query_dir get_query_dir);
 // Return array is allocated via 'malloc' and its size is same as 'text.size'.
+/// Highlight teext as specific language.
+///
+/// * [pl:self] tshl state.
+/// * [pl:text] Text to highlight.
+/// * [pl:lang] Language of this text. Used to retrieve parser and queries.
 tshl_metadata_t* tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang);
+/// Convert style from enum to string
 const char* tshl_style_to_name(enum tshl_style_t style);
+/// Convert style from string to enum.
+///
+/// Can be used to convert tree-sitter capture name to enum.
 enum tshl_style_t tshl_name_to_style(cbuild_sv_t name);
-
 #endif // __TSHL_H__
 /* vim: set foldmethod=marker foldmarker=#pragma\ region,#pragma\ endregion : */

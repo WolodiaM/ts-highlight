@@ -26,14 +26,14 @@ int main(int argc, char** argv) {
 	if (!cbuild_file_read(file, &sb)) return 1;
 	tshl_t tshl = tshl_init(load_parser, get_query_dir);
 	tshl_metadata_t* meta = tshl_highlight(&tshl, cbuild_sv_from_sb(sb), cbuild_sv_from_lit("markdown"));
-	enum tshl_style_t curr = meta[0].style;
+	enum tshl_style_t curr = meta[0].style[10];
 	printf("Span '");
 	for (size_t i = 0; i < sb.size; i++) {
-		if (curr != meta[i].style) {
+		if (curr != meta[i].style[10]) {
 			printf("' with style %s.\n", tshl_style_to_name(curr));
 			printf("Span '");
 		}
-		curr = meta[i].style;
+		curr = meta[i].style[10];
 		printf("%c", sb.data[i]);
 	}
 	return 0;
