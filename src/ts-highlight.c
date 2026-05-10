@@ -715,7 +715,7 @@ bool __tshl_predicate_vim_match(TSQuery* q, const TSQueryPredicateStep* steps, u
 				cbuild_cmd_clear(&cmd);
 				return false;
 			}
-			const char* op = cbuild_temp_sprintf("echo matchstr(\""CBuildSVFmt"\", \""CBuildSVFmt"\")", CBuildSVArg(ntext), CBuildSVArg(pat));
+			const char* op = cbuild_temp_sprintf("echo matchstr(\""CBuildSVFmt"\", '"CBuildSVFmt"')", CBuildSVArg(ntext), CBuildSVArg(pat));
 			cbuild_cmd_append(&cmd, op);
 			cbuild_cmd_append(&cmd, "+q");
 			if (!cbuild_cmd_run(&cmd, .fdstdout = &wr, .fdstderr = &wr)) {
@@ -752,7 +752,7 @@ bool __tshl_predicate_any_vim_match(TSQuery* q, const TSQueryPredicateStep* step
 				cbuild_cmd_clear(&cmd);
 				return false;
 			}
-			const char* op = cbuild_temp_sprintf("matchstr(\""CBuildSVFmt"\", \""CBuildSVFmt"\")", CBuildSVArg(ntext), CBuildSVArg(pat));
+			const char* op = cbuild_temp_sprintf("matchstr(\""CBuildSVFmt"\", '"CBuildSVFmt"')", CBuildSVArg(ntext), CBuildSVArg(pat));
 			cbuild_cmd_append(&cmd, op);
 			cbuild_cmd_append(&cmd, "+q");
 			if (!cbuild_cmd_run(&cmd, .fdstdout = &wr, .fdstderr = &wr)) {
