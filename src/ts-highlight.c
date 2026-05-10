@@ -324,6 +324,126 @@ bool __tshl_predicate_eq(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t
 	}
 	return true;
 }
+// Signature: 'any-eq? [string|capture] [string|capture]'
+bool __tshl_predicate_any_eq(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text) {
+	cbuild_sv_t c1 = {0};
+	if (steps[*ip].type == TSQueryPredicateStepTypeString) {
+		cbuild_sv_t base = __tshl_predicate_get_string(q, steps[(*ip)++], "any-eq?", 1);
+		c1 = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "any-eq?", 2);
+		cbuild_da_foreach(*captures, capt) {
+			if (cbuild_sv_cmp(c1, capt->name) == 0) {
+				if (cbuild_sv_cmp(base, __tshl_capture_get_sv(*capt, text)) == 0) {
+					return true;
+				}
+			}
+		}
+	}
+	c1 = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "any-eq?", 1);
+	if (steps[*ip].type == TSQueryPredicateStepTypeString) {
+		cbuild_sv_t base = __tshl_predicate_get_string(q, steps[(*ip)++], "any-eq?", 2);
+		cbuild_da_foreach(*captures, capt) {
+			if (cbuild_sv_cmp(c1, capt->name) == 0) {
+				if (cbuild_sv_cmp(base, __tshl_capture_get_sv(*capt, text)) == 0) {
+					return true;
+				}
+			}
+		}
+	}
+	cbuild_sv_t c2 = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "any-eq?", 2);
+	cbuild_da_foreach(*captures, capt1) {
+		if (cbuild_sv_cmp(c1, capt1->name) == 0) {
+			cbuild_da_foreach(*captures, capt2) {
+				if (cbuild_sv_cmp(c2, capt2->name) == 0) {
+					if (cbuild_sv_cmp(__tshl_capture_get_sv(*capt1, text),
+							__tshl_capture_get_sv(*capt2, text)) == 0) {
+						return true;
+					}
+				}
+			}
+		}
+	}
+	return false;
+}
+// Signature: 'contains? [string|capture] [string|capture]'
+bool __tshl_predicate_contains(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text) {
+	cbuild_sv_t c1 = {0};
+	if (steps[*ip].type == TSQueryPredicateStepTypeString) {
+		cbuild_sv_t base = __tshl_predicate_get_string(q, steps[(*ip)++], "contains?", 1);
+		c1 = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "contains?", 2);
+		cbuild_da_foreach(*captures, capt) {
+			if (cbuild_sv_cmp(c1, capt->name) == 0) {
+				if (!cbuild_sv_contains_sv(base, __tshl_capture_get_sv(*capt, text))) {
+					return false;
+				}
+			}
+		}
+	}
+	c1 = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "contains?", 1);
+	if (steps[*ip].type == TSQueryPredicateStepTypeString) {
+		cbuild_sv_t base = __tshl_predicate_get_string(q, steps[(*ip)++], "contains?", 2);
+		cbuild_da_foreach(*captures, capt) {
+			if (cbuild_sv_cmp(c1, capt->name) == 0) {
+				if (!cbuild_sv_contains_sv(base, __tshl_capture_get_sv(*capt, text))) {
+					return false;
+				}
+			}
+		}
+	}
+	cbuild_sv_t c2 = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "contains?", 2);
+	cbuild_da_foreach(*captures, capt1) {
+		if (cbuild_sv_cmp(c1, capt1->name) == 0) {
+			cbuild_da_foreach(*captures, capt2) {
+				if (cbuild_sv_cmp(c2, capt2->name) == 0) {
+					if (!cbuild_sv_contains_sv(__tshl_capture_get_sv(*capt1, text),
+							__tshl_capture_get_sv(*capt2, text))) {
+						return false;
+					}
+				}
+			}
+		}
+	}
+	return true;
+}
+// Signature: 'any-contains? [string|capture] [string|capture]'
+bool __tshl_predicate_any_contains(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text) {
+	cbuild_sv_t c1 = {0};
+	if (steps[*ip].type == TSQueryPredicateStepTypeString) {
+		cbuild_sv_t base = __tshl_predicate_get_string(q, steps[(*ip)++], "any-contains?", 1);
+		c1 = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "any-contains?", 2);
+		cbuild_da_foreach(*captures, capt) {
+			if (cbuild_sv_cmp(c1, capt->name) == 0) {
+				if (cbuild_sv_contains_sv(base, __tshl_capture_get_sv(*capt, text))) {
+					return true;
+				}
+			}
+		}
+	}
+	c1 = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "any-contains?", 1);
+	if (steps[*ip].type == TSQueryPredicateStepTypeString) {
+		cbuild_sv_t base = __tshl_predicate_get_string(q, steps[(*ip)++], "any-contains?", 2);
+		cbuild_da_foreach(*captures, capt) {
+			if (cbuild_sv_cmp(c1, capt->name) == 0) {
+				if (cbuild_sv_contains_sv(base, __tshl_capture_get_sv(*capt, text))) {
+					return true;
+				}
+			}
+		}
+	}
+	cbuild_sv_t c2 = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "any-contains?", 2);
+	cbuild_da_foreach(*captures, capt1) {
+		if (cbuild_sv_cmp(c1, capt1->name) == 0) {
+			cbuild_da_foreach(*captures, capt2) {
+				if (cbuild_sv_cmp(c2, capt2->name) == 0) {
+					if (cbuild_sv_contains_sv(__tshl_capture_get_sv(*capt1, text),
+							__tshl_capture_get_sv(*capt2, text))) {
+						return true;
+					}
+				}
+			}
+		}
+	}
+	return false;
+}
 struct {
 	cbuild_sv_t name;
 	bool (*eval)(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text);
@@ -335,6 +455,18 @@ struct {
 	{
 		.name = cbuild_sv_from_lit("eq?"),
 		.eval = __tshl_predicate_eq,
+	},
+	{
+		.name = cbuild_sv_from_lit("any-eq?"),
+		.eval = __tshl_predicate_any_eq,
+	},
+	{
+		.name = cbuild_sv_from_lit("contains?"),
+		.eval = __tshl_predicate_contains,
+	},
+	{
+		.name = cbuild_sv_from_lit("any-contains?"),
+		.eval = __tshl_predicate_any_contains,
 	},
 };
 bool __tshl_eval_predicate(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text) {
