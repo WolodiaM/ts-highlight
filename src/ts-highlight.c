@@ -284,6 +284,10 @@ bool __tshl_predicate_set(TSQuery* q, const TSQueryPredicateStep* steps, uint32_
 		// TODO: Implement this.
 	} else if (cbuild_sv_cmp(var, cbuild_sv_from_lit("injection.include-children")) == 0) {
 		// TODO: Implement this.
+	} else if (cbuild_sv_cmp(var, cbuild_sv_from_lit("injection.self")) == 0) {
+		// TODO: Implement this.
+	} else if (cbuild_sv_cmp(var, cbuild_sv_from_lit("injection.combined")) == 0) {
+		// TODO: Implement this.
 	} else {
 		cbuild_log_error("Invalid variables for 'set!' - '"CBuildSVFmt"'.", CBuildSVArg(var));
 		return false;
@@ -558,6 +562,194 @@ bool __tshl_predicate_has_ancestor(TSQuery* q, const TSQueryPredicateStep* steps
 	cbuild_da_clear(&strings);
 	return false;
 }
+// TODO: It should be possible to reimplement lua pattern matching
+bool __tshl_predicate_lua_match(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text) {
+	cbuild_sv_t node = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "lua-match?", 1);
+	cbuild_sv_t pat = __tshl_predicate_get_string(q, steps[(*ip)++], "lua-match?", 2);
+	cbuild_cmd_t cmd = {0};
+	cbuild_da_foreach(*captures, capt) {
+		if (cbuild_sv_cmp(node, capt->name) == 0) {
+			cbuild_sv_t ntext = __tshl_capture_get_sv(*capt, text);
+			cbuild_cmd_append_many(&cmd, "nvim", "--clean", "--headless", "-c");
+			cbuild_fd_t rd, wr;
+			if (!cbuild_fd_open_pipe(&rd, &wr)) {
+				cbuild_cmd_clear(&cmd);
+				return false;
+			}
+			const char* op = cbuild_temp_sprintf("lua= string.find([["CBuildSVFmt"]], [["CBuildSVFmt"]])", CBuildSVArg(ntext), CBuildSVArg(pat));
+			cbuild_cmd_append(&cmd, op);
+			cbuild_cmd_append(&cmd, "+q");
+			if (!cbuild_cmd_run(&cmd, .fdstdout = &wr, .fdstderr = &wr)) {
+				cbuild_cmd_clear(&cmd);
+				cbuild_fd_close(rd);
+				cbuild_fd_close(wr);
+				return false;
+			}
+			cbuild_fd_close(wr);
+			char buff[1025] = {0};
+			if (cbuild_fd_read(rd, buff, 1024) == -1) {
+				cbuild_cmd_clear(&cmd);
+				cbuild_fd_close(rd);
+				return false;
+			}
+			cbuild_fd_close(rd);
+			cbuild_sv_t res = cbuild_sv_from_cstr(buff);
+			cbuild_sv_trim(&res);
+			if (cbuild_sv_prefix(res, cbuild_sv_from_lit("nil"))) {
+				cbuild_cmd_clear(&cmd);
+				return false;
+			}
+		}
+	}
+	cbuild_cmd_clear(&cmd);
+	return true;
+}
+bool __tshl_predicate_any_lua_match(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text) {
+	cbuild_sv_t node = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "any-lua-match?", 1);
+	cbuild_sv_t pat = __tshl_predicate_get_string(q, steps[(*ip)++], "any-lua-match?", 2);
+	cbuild_cmd_t cmd = {0};
+	cbuild_da_foreach(*captures, capt) {
+		if (cbuild_sv_cmp(node, capt->name) == 0) {
+			cbuild_sv_t ntext = __tshl_capture_get_sv(*capt, text);
+			cbuild_cmd_append_many(&cmd, "nvim", "--clean", "--headless", "-c");
+			cbuild_fd_t rd, wr;
+			if (!cbuild_fd_open_pipe(&rd, &wr)) {
+				cbuild_cmd_clear(&cmd);
+				return false;
+			}
+			const char* op = cbuild_temp_sprintf("lua= string.find(\""CBuildSVFmt"\", "CBuildSVFmt")", CBuildSVArg(ntext), CBuildSVArg(pat));
+			cbuild_cmd_append(&cmd, op);
+			cbuild_cmd_append(&cmd, "+q");
+			if (!cbuild_cmd_run(&cmd, .fdstdout = &wr, .fdstderr = &wr)) {
+				cbuild_cmd_clear(&cmd);
+				return false;
+			}
+			char buff[1025] = {0};
+			if (cbuild_fd_read(rd, buff, 1024) == -1) {
+				cbuild_cmd_clear(&cmd);
+				return false;
+			}
+			cbuild_sv_t res = cbuild_sv_from_cstr(buff);
+			cbuild_sv_trim(&res);
+			if (!cbuild_sv_prefix(res, cbuild_sv_from_lit("nil"))) {
+				cbuild_cmd_clear(&cmd);
+				return true;
+			}
+		}
+	}
+	cbuild_cmd_clear(&cmd);
+	return false;
+}
+bool __tshl_predicate_gsub(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text) {
+	cbuild_sv_t node = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "gsub!", 1);
+	cbuild_sv_t pat = __tshl_predicate_get_string(q, steps[(*ip)++], "gsub!", 2);
+	cbuild_sv_t repl = __tshl_predicate_get_string(q, steps[(*ip)++], "gsub!", 3);
+	cbuild_cmd_t cmd = {0};
+	cbuild_da_foreach(*captures, capt) {
+		if (cbuild_sv_cmp(node, capt->name) == 0) {
+			cbuild_sv_t ntext = __tshl_capture_get_sv(*capt, text);
+			cbuild_cmd_append_many(&cmd, "nvim", "--clean", "--headless", "-c");
+			cbuild_fd_t rd, wr;
+			if (!cbuild_fd_open_pipe(&rd, &wr)) {
+				cbuild_cmd_clear(&cmd);
+				return false;
+			}
+			const char* op = cbuild_temp_sprintf("lua= string.gsub([["CBuildSVFmt"]], [["CBuildSVFmt"]], [["CBuildSVFmt"]])", CBuildSVArg(ntext), CBuildSVArg(pat), CBuildSVArg(repl));
+			cbuild_cmd_append(&cmd, op);
+			cbuild_cmd_append(&cmd, "+q");
+			if (!cbuild_cmd_run(&cmd, .fdstdout = &wr, .fdstderr = &wr)) {
+				cbuild_cmd_clear(&cmd);
+				return false;
+			}
+			// Hope this will work
+			char buff[1025] = {0};
+			if (cbuild_fd_read(rd, buff, 1024) == -1) {
+				cbuild_cmd_clear(&cmd);
+				return false;
+			}
+			cbuild_sv_t res = cbuild_sv_from_cstr(buff);
+			cbuild_sv_trim(&res);
+			cbuild_sv_chop(&res, 1);
+			res.size--;
+			capt->val = __tshl_temp_svdup(res);
+		}
+	}
+	cbuild_cmd_clear(&cmd);
+	return true;
+}
+// TODO: This is pretty huge hack
+bool __tshl_predicate_vim_match(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text) {
+	cbuild_sv_t node = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "match?", 1);
+	cbuild_sv_t pat = __tshl_predicate_get_string(q, steps[(*ip)++], "match?", 2);
+	cbuild_cmd_t cmd = {0};
+	cbuild_da_foreach(*captures, capt) {
+		if (cbuild_sv_cmp(node, capt->name) == 0) {
+			cbuild_sv_t ntext = __tshl_capture_get_sv(*capt, text);
+			cbuild_cmd_append_many(&cmd, "nvim", "--clean", "--headless", "-c");
+			cbuild_fd_t rd, wr;
+			if (!cbuild_fd_open_pipe(&rd, &wr)) {
+				cbuild_cmd_clear(&cmd);
+				return false;
+			}
+			const char* op = cbuild_temp_sprintf("echo matchstr(\""CBuildSVFmt"\", \""CBuildSVFmt"\")", CBuildSVArg(ntext), CBuildSVArg(pat));
+			cbuild_cmd_append(&cmd, op);
+			cbuild_cmd_append(&cmd, "+q");
+			if (!cbuild_cmd_run(&cmd, .fdstdout = &wr, .fdstderr = &wr)) {
+				cbuild_cmd_clear(&cmd);
+				return false;
+			}
+			char buff[1025] = {0};
+			if (cbuild_fd_read(rd, buff, 1024) == -1) {
+				cbuild_cmd_clear(&cmd);
+				return false;
+			}
+			cbuild_sv_t res = cbuild_sv_from_cstr(buff);
+			cbuild_sv_trim(&res);
+			if (res.size == 0) {
+				cbuild_cmd_clear(&cmd);
+				return false;
+			}
+		}
+	}
+	cbuild_cmd_clear(&cmd);
+	return true;
+}
+bool __tshl_predicate_any_vim_match(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text) {
+	cbuild_sv_t node = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "any-match?", 1);
+	cbuild_sv_t pat = __tshl_predicate_get_string(q, steps[(*ip)++], "any-match?", 2);
+	cbuild_cmd_t cmd = {0};
+	cbuild_da_foreach(*captures, capt) {
+		if (cbuild_sv_cmp(node, capt->name) == 0) {
+			cbuild_sv_t ntext = __tshl_capture_get_sv(*capt, text);
+			cbuild_cmd_append_many(&cmd, "nvim", "--clean", "--headless", "-c");
+			cbuild_fd_t rd, wr;
+			if (!cbuild_fd_open_pipe(&rd, &wr)) {
+				cbuild_cmd_clear(&cmd);
+				return false;
+			}
+			const char* op = cbuild_temp_sprintf("matchstr(\""CBuildSVFmt"\", \""CBuildSVFmt"\")", CBuildSVArg(ntext), CBuildSVArg(pat));
+			cbuild_cmd_append(&cmd, op);
+			cbuild_cmd_append(&cmd, "+q");
+			if (!cbuild_cmd_run(&cmd, .fdstdout = &wr, .fdstderr = &wr)) {
+				cbuild_cmd_clear(&cmd);
+				return false;
+			}
+			char buff[1025] = {0};
+			if (cbuild_fd_read(rd, buff, 1024) == -1) {
+				cbuild_cmd_clear(&cmd);
+				return false;
+			}
+			cbuild_sv_t res = cbuild_sv_from_cstr(buff);
+			cbuild_sv_trim(&res);
+			if (res.size != 0) {
+				cbuild_cmd_clear(&cmd);
+				return true;
+			}
+		}
+	}
+	cbuild_cmd_clear(&cmd);
+	return false;
+}
 struct {
 	cbuild_sv_t name;
 	bool (*eval)(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text);
@@ -569,6 +761,10 @@ struct {
 	{
 		.name = cbuild_sv_from_lit("offset!"),
 		.eval = __tshl_predicate_offset,
+	},
+	{
+		.name = cbuild_sv_from_lit("gsub!"),
+		.eval = __tshl_predicate_gsub,
 	},
 	{
 		.name = cbuild_sv_from_lit("eq?"),
@@ -597,6 +793,30 @@ struct {
 	{
 		.name = cbuild_sv_from_lit("has-ancestor?"),
 		.eval = __tshl_predicate_has_ancestor,
+	},
+	{
+		.name = cbuild_sv_from_lit("lua-match?"),
+		.eval = __tshl_predicate_lua_match,
+	},
+	{
+		.name = cbuild_sv_from_lit("any-lua-match?"),
+		.eval = __tshl_predicate_lua_match,
+	},
+	{
+		.name = cbuild_sv_from_lit("match?"),
+		.eval = __tshl_predicate_vim_match,
+	},
+	{
+		.name = cbuild_sv_from_lit("any-match?"),
+		.eval = __tshl_predicate_vim_match,
+	},
+	{
+		.name = cbuild_sv_from_lit("vim-match?"),
+		.eval = __tshl_predicate_vim_match,
+	},
+	{
+		.name = cbuild_sv_from_lit("any-vim-match?"),
+		.eval = __tshl_predicate_vim_match,
 	},
 };
 bool __tshl_eval_predicate(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text) {
@@ -719,13 +939,14 @@ void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, uint32_t
 	}
 	// Injection queries
 	if (q->inj != NULL) {
-		ts_query_cursor_exec(c, q->inj, root);
+		TSQuery* inj = q->inj; // Map may realloc somehow.
+		ts_query_cursor_exec(c, inj, root);
 		while(ts_query_cursor_next_match(c, &match)) {
 			captures.size = 0;
 			for (uint16_t i = 0; i < match.capture_count; i++) {
 				TSQueryCapture capt = match.captures[i];
 				uint32_t name_len = 0;
-				const char* name = ts_query_capture_name_for_id(q->inj, capt.index, &name_len);
+				const char* name = ts_query_capture_name_for_id(inj, capt.index, &name_len);
 				uint32_t start = ts_node_start_byte(capt.node);
 				uint32_t end = ts_node_end_byte(capt.node);
 				cbuild_sv_t st_name = cbuild_sv_from_parts(name, name_len);
@@ -739,9 +960,9 @@ void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, uint32_t
 			bool valid = true;
 			const TSQueryPredicateStep* predicate = NULL;
 			uint32_t step_count = 0;
-			predicate = ts_query_predicates_for_pattern(q->inj, match.pattern_index, &step_count);
+			predicate = ts_query_predicates_for_pattern(inj, match.pattern_index, &step_count);
 			if (predicate != NULL) {
-				valid = __tshl_eval_predicates(q->inj, predicate, step_count, &captures, text);
+				valid = __tshl_eval_predicates(inj, predicate, step_count, &captures, text);
 			}
 			if (valid) {
 				cbuild_sv_t inj_lang = {0};
@@ -755,6 +976,9 @@ void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, uint32_t
 						inj_text = __tshl_capture_get_sv(*capt, text);
 					}
 				}
+				cbuild_sv_trim(&inj_lang);
+				if (cbuild_sv_cmp(inj_lang, cbuild_sv_from_lit("text")) == 0) continue;
+				if (inj_lang.size == 0) continue;
 				__tshl_highlight(self, inj_text, inj_lang, inj_offset, meta);
 			}
 		}
