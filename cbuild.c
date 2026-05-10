@@ -28,7 +28,26 @@ int main(int argc, char** argv) {
 		cbuild_cmd_append_arr(&cmd, argv, (size_t)argc);
 		if (!cbuild_cmd_run(&cmd)) return 1;
 	} else if (strcmp(op, "build") == 0) {
-		// TODO: Amalgamate library. It is small-enough to be used as a single-header library.
+		cbuild_sb_t output = {0};
+		cbuild_sb_append_cstr(&output, "// ts-highlight.h by WolodiaM\n");
+		cbuild_sb_append_cstr(&output, "// License: GPL-3.0-or-later\n");
+		if (!cbuild_file_read("src/ts-highlight.h", &output)) return 1;
+		cbuild_sb_append_cstr(&output, "\n");
+		cbuild_sb_append_cstr(&output, "#ifndef TSHL_IMPLEMENTATION\n");
+		cbuild_sb_append_cstr(&output, "#define TSHL_IMPLEMENTATION\n");
+		cbuild_sb_t src = {0};
+		if (!cbuild_file_read("src/ts-highlight.c", &src)) return 1;
+		cbuild_sv_t content = cbuild_sv_from_sb(src);
+		while (content.size > 0) {
+			cbuild_sv_t line = cbuild_sv_chop_by_delim(&content, '\n');
+			if (cbuild_sv_prefix(line, cbuild_sv_from_lit("#include"))) {
+				cbuild_sb_append_cstr(&output, "// ");
+			}
+			cbuild_sb_append_sv(&output, line);
+			cbuild_sb_append_cstr(&output, "\n");
+		}
+		cbuild_sb_append_cstr(&output, "#endif // TSHL_IMPLEMENTATION");
+		if (!cbuild_file_write("ts-highlight.h", &output)) return 1;
 	} else {
 		cbuild_log_error("Invalid subcommand. Expected one of 'run', 'build'.");
 		return 1;
