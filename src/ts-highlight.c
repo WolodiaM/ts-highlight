@@ -448,25 +448,85 @@ bool __tshl_predicate_any_contains(TSQuery* q, const TSQueryPredicateStep* steps
 bool __tshl_predicate_any_of(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text) {
 	int argidx = 1;
 	cbuild_sv_t node = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "any-of?", argidx++);
+	__tshl_da_sv_t strings = {0};
+	while (steps[(*ip)++].type != TSQueryPredicateStepTypeDone) {
+		cbuild_sv_t str = __tshl_predicate_get_string(q, steps[(*ip)++], "any-of?", argidx++);
+		cbuild_da_append(&strings, str);
+	}
 	cbuild_da_foreach(*captures, capt) {
 		if (cbuild_sv_cmp(node, capt->name) == 0) {
-			uint32_t ipc = *ip;
-			while (steps[ipc].type != TSQueryPredicateStepTypeDone) {
-				cbuild_sv_t str = __tshl_predicate_get_string(q, steps[ipc++], "any-of?", argidx++);
-				if (cbuild_sv_cmp(__tshl_capture_get_sv(*capt, text), str) == 0) return true;
+			cbuild_da_foreach(strings, str) {
+				if (cbuild_sv_cmp(__tshl_capture_get_sv(*capt, text), *str) == 0) {
+					cbuild_da_clear(&strings);
+					return true;
+				}
 			}
 		}
 	}
+	cbuild_da_clear(&strings);
+	return false;
+}
+// 'has-parent?' [capture] [string...]
+bool __tshl_predicate_has_parent(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text) {
+	CBUILD_UNUSED(text);
+	int argidx = 1;
+	cbuild_sv_t node = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "has-parent?", argidx++);
+	__tshl_da_sv_t strings = {0};
+	while (steps[(*ip)++].type != TSQueryPredicateStepTypeDone) {
+		cbuild_sv_t str = __tshl_predicate_get_string(q, steps[(*ip)++], "has-parent?", argidx++);
+		cbuild_da_append(&strings, str);
+	}
+	cbuild_da_foreach(*captures, capt) {
+		if (cbuild_sv_cmp(node, capt->name) == 0) {
+			TSNode pnode = ts_node_parent(capt->node);
+			if (!ts_node_is_null(pnode)) {
+				const char* cparent = ts_node_type(pnode);
+				cbuild_sv_t parent = cbuild_sv_from_cstr(cparent);
+				cbuild_da_foreach(strings, str) {
+					if (cbuild_sv_cmp(parent, *str) == 0) {
+						cbuild_da_clear(&strings);
+						return true;
+					}
+				}
+			}
+		}
+	}
+	cbuild_da_clear(&strings);
+	return false;
+}
+// 'has-ancestor?' [capture] [string...]
+bool __tshl_predicate_has_ancestor(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text) {
+	CBUILD_UNUSED(text);
+	int argidx = 1;
+	cbuild_sv_t node = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "has-ancestor?", argidx++);
+	__tshl_da_sv_t strings = {0};
+	while (steps[(*ip)++].type != TSQueryPredicateStepTypeDone) {
+		cbuild_sv_t str = __tshl_predicate_get_string(q, steps[(*ip)++], "has-ancestor?", argidx++);
+		cbuild_da_append(&strings, str);
+	}
+	cbuild_da_foreach(*captures, capt) {
+		if (cbuild_sv_cmp(node, capt->name) == 0) {
+			TSNode pnode = ts_tree_root_node(capt->node.tree);
+			while (pnode.id != capt->node.id && !ts_node_is_null(pnode)) {
+				const char* cparent = ts_node_type(pnode);
+				cbuild_sv_t parent = cbuild_sv_from_cstr(cparent);
+				cbuild_da_foreach(strings, str) {
+					if (cbuild_sv_cmp(parent, *str) == 0) {
+						cbuild_da_clear(&strings);
+						return true;
+					}
+				}
+				pnode = ts_node_child_with_descendant(pnode, capt->node);
+			}
+		}
+	}
+	cbuild_da_clear(&strings);
 	return false;
 }
 struct {
 	cbuild_sv_t name;
 	bool (*eval)(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text);
 } __TSHL_PREDICATES[] = {
-	{
-		.name = cbuild_sv_from_lit("set!"),
-		.eval = __tshl_predicate_set,
-	},
 	{
 		.name = cbuild_sv_from_lit("eq?"),
 		.eval = __tshl_predicate_eq,
@@ -486,7 +546,19 @@ struct {
 	{
 		.name = cbuild_sv_from_lit("any-of?"),
 		.eval = __tshl_predicate_any_of,
-	}
+	},
+	{
+		.name = cbuild_sv_from_lit("has-parent?"),
+		.eval = __tshl_predicate_has_parent,
+	},
+	{
+		.name = cbuild_sv_from_lit("has-ancestor?"),
+		.eval = __tshl_predicate_has_ancestor,
+	},
+	{
+		.name = cbuild_sv_from_lit("set!"),
+		.eval = __tshl_predicate_set,
+	},
 };
 bool __tshl_eval_predicate(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text) {
 	bool ret = true;
