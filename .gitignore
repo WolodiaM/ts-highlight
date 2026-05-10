@@ -1,0 +1,5 @@
+# Artifacts
+/cbuild.run
+/cbuild.run.old
+/ts-highlight.run
+/ts-highlight.h
