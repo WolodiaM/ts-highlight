@@ -592,28 +592,43 @@ bool __tshl_predicate_lua_match(TSQuery* q, const TSQueryPredicateStep* steps, u
 		if (cbuild_sv_cmp(node, capt->name) == 0) {
 			cbuild_sv_t ntext = __tshl_capture_get_sv(*capt, text);
 			cbuild_cmd_append_many(&cmd, "nvim", "--clean", "--headless", "-c");
-			cbuild_fd_t rd, wr;
-			if (!cbuild_fd_open_pipe(&rd, &wr)) {
-				cbuild_cmd_clear(&cmd);
-				return false;
-			}
-			const char* op = cbuild_temp_sprintf("lua= string.find([["CBuildSVFmt"]], [["CBuildSVFmt"]])", CBuildSVArg(ntext), CBuildSVArg(pat));
+			const char* op = cbuild_temp_sprintf("lua= string.find(io.read('*a'), [["CBuildSVFmt"]])", CBuildSVArg(pat));
 			cbuild_cmd_append(&cmd, op);
 			cbuild_cmd_append(&cmd, "+q");
-			if (!cbuild_cmd_run(&cmd, .fdstdout = &wr, .fdstderr = &wr)) {
+			cbuild_fd_t out_rd, out_wr;
+			if (!cbuild_fd_open_pipe(&out_rd, &out_wr)) {
 				cbuild_cmd_clear(&cmd);
-				cbuild_fd_close(rd);
-				cbuild_fd_close(wr);
 				return false;
 			}
-			cbuild_fd_close(wr);
+			cbuild_fd_t in_rd, in_wr;
+			if (!cbuild_fd_open_pipe(&in_rd, &in_wr)) {
+				cbuild_cmd_clear(&cmd);
+				return false;
+			}
+			cbuild_proc_t proc = CBUILD_INVALID_PROC;
+			if (!cbuild_cmd_run(&cmd, .fdstdin = &in_rd, .fdstdout = &out_wr, .fdstderr = &out_wr, .proc = &proc)) {
+				cbuild_cmd_clear(&cmd);
+				cbuild_fd_close(out_rd);
+				cbuild_fd_close(out_wr);
+				return false;
+			}
+			cbuild_fd_close(out_wr);
+			cbuild_fd_close(in_rd);
+			if (cbuild_fd_write(in_wr, ntext.data, ntext.size) < 0) {
+				kill(proc, SIGKILL);
+				cbuild_fd_close(out_rd);
+				cbuild_fd_close(in_rd);
+				cbuild_fd_close(in_wr);
+				return false;
+			}
+			cbuild_fd_close(in_wr);
 			char buff[1025] = {0};
-			if (cbuild_fd_read(rd, buff, 1024) == -1) {
+			if (cbuild_fd_read(out_rd, buff, 1024) == -1) {
 				cbuild_cmd_clear(&cmd);
-				cbuild_fd_close(rd);
+				cbuild_fd_close(out_rd);
 				return false;
 			}
-			cbuild_fd_close(rd);
+			cbuild_fd_close(out_rd);
 			cbuild_sv_t res = cbuild_sv_from_cstr(buff);
 			cbuild_sv_trim(&res);
 			if (cbuild_sv_prefix(res, cbuild_sv_from_lit("nil"))) {
@@ -634,23 +649,43 @@ bool __tshl_predicate_any_lua_match(TSQuery* q, const TSQueryPredicateStep* step
 		if (cbuild_sv_cmp(node, capt->name) == 0) {
 			cbuild_sv_t ntext = __tshl_capture_get_sv(*capt, text);
 			cbuild_cmd_append_many(&cmd, "nvim", "--clean", "--headless", "-c");
-			cbuild_fd_t rd, wr;
-			if (!cbuild_fd_open_pipe(&rd, &wr)) {
-				cbuild_cmd_clear(&cmd);
-				return false;
-			}
-			const char* op = cbuild_temp_sprintf("lua= string.find(\""CBuildSVFmt"\", "CBuildSVFmt")", CBuildSVArg(ntext), CBuildSVArg(pat));
+			const char* op = cbuild_temp_sprintf("lua= string.find(io.read('*a'), [["CBuildSVFmt"]])", CBuildSVArg(pat));
 			cbuild_cmd_append(&cmd, op);
 			cbuild_cmd_append(&cmd, "+q");
-			if (!cbuild_cmd_run(&cmd, .fdstdout = &wr, .fdstderr = &wr)) {
+			cbuild_fd_t out_rd, out_wr;
+			if (!cbuild_fd_open_pipe(&out_rd, &out_wr)) {
 				cbuild_cmd_clear(&cmd);
 				return false;
 			}
+			cbuild_fd_t in_rd, in_wr;
+			if (!cbuild_fd_open_pipe(&in_rd, &in_wr)) {
+				cbuild_cmd_clear(&cmd);
+				return false;
+			}
+			cbuild_proc_t proc = CBUILD_INVALID_PROC;
+			if (!cbuild_cmd_run(&cmd, .fdstdin = &in_rd, .fdstdout = &out_wr, .fdstderr = &out_wr, .proc = &proc)) {
+				cbuild_cmd_clear(&cmd);
+				cbuild_fd_close(out_rd);
+				cbuild_fd_close(out_wr);
+				return false;
+			}
+			cbuild_fd_close(out_wr);
+			cbuild_fd_close(in_rd);
+			if (cbuild_fd_write(in_wr, ntext.data, ntext.size) < 0) {
+				kill(proc, SIGKILL);
+				cbuild_fd_close(out_rd);
+				cbuild_fd_close(in_rd);
+				cbuild_fd_close(in_wr);
+				return false;
+			}
+			cbuild_fd_close(in_wr);
 			char buff[1025] = {0};
-			if (cbuild_fd_read(rd, buff, 1024) == -1) {
+			if (cbuild_fd_read(out_rd, buff, 1024) == -1) {
 				cbuild_cmd_clear(&cmd);
+				cbuild_fd_close(out_rd);
 				return false;
 			}
+			cbuild_fd_close(out_rd);
 			cbuild_sv_t res = cbuild_sv_from_cstr(buff);
 			cbuild_sv_trim(&res);
 			if (!cbuild_sv_prefix(res, cbuild_sv_from_lit("nil"))) {
@@ -672,28 +707,46 @@ bool __tshl_predicate_gsub(TSQuery* q, const TSQueryPredicateStep* steps, uint32
 		if (cbuild_sv_cmp(node, capt->name) == 0) {
 			cbuild_sv_t ntext = __tshl_capture_get_sv(*capt, text);
 			cbuild_cmd_append_many(&cmd, "nvim", "--clean", "--headless", "-c");
-			cbuild_fd_t rd, wr;
-			if (!cbuild_fd_open_pipe(&rd, &wr)) {
-				cbuild_cmd_clear(&cmd);
-				return false;
-			}
-			const char* op = cbuild_temp_sprintf("lua= string.gsub([["CBuildSVFmt"]], [["CBuildSVFmt"]], [["CBuildSVFmt"]])", CBuildSVArg(ntext), CBuildSVArg(pat), CBuildSVArg(repl));
+			const char* op = cbuild_temp_sprintf("lua= string.gsub(io.read('*a'), [["CBuildSVFmt"]], [["CBuildSVFmt"]])", CBuildSVArg(pat), CBuildSVArg(repl));
 			cbuild_cmd_append(&cmd, op);
 			cbuild_cmd_append(&cmd, "+q");
-			if (!cbuild_cmd_run(&cmd, .fdstdout = &wr, .fdstderr = &wr)) {
+			cbuild_fd_t out_rd, out_wr;
+			if (!cbuild_fd_open_pipe(&out_rd, &out_wr)) {
 				cbuild_cmd_clear(&cmd);
 				return false;
 			}
-			// Hope this will work
+			cbuild_fd_t in_rd, in_wr;
+			if (!cbuild_fd_open_pipe(&in_rd, &in_wr)) {
+				cbuild_cmd_clear(&cmd);
+				return false;
+			}
+			cbuild_proc_t proc = CBUILD_INVALID_PROC;
+			if (!cbuild_cmd_run(&cmd, .fdstdin = &in_rd, .fdstdout = &out_wr, .fdstderr = &out_wr, .proc = &proc)) {
+				cbuild_cmd_clear(&cmd);
+				cbuild_fd_close(out_rd);
+				cbuild_fd_close(out_wr);
+				return false;
+			}
+			cbuild_fd_close(out_wr);
+			cbuild_fd_close(in_rd);
+			if (cbuild_fd_write(in_wr, ntext.data, ntext.size) < 0) {
+				kill(proc, SIGKILL);
+				cbuild_fd_close(out_rd);
+				cbuild_fd_close(in_rd);
+				cbuild_fd_close(in_wr);
+				return false;
+			}
+			cbuild_fd_close(in_wr);
 			char buff[1025] = {0};
-			if (cbuild_fd_read(rd, buff, 1024) == -1) {
+			if (cbuild_fd_read(out_rd, buff, 1024) == -1) {
 				cbuild_cmd_clear(&cmd);
+				cbuild_fd_close(out_rd);
 				return false;
 			}
+			cbuild_fd_close(out_rd);
 			cbuild_sv_t res = cbuild_sv_from_cstr(buff);
 			cbuild_sv_trim(&res);
-			cbuild_sv_chop(&res, 1);
-			res.size--;
+			cbuild_sv_chop_right_by_delim(&res, '\n');
 			capt->val = __tshl_temp_svdup(res);
 		}
 	}
@@ -710,23 +763,43 @@ bool __tshl_predicate_vim_match(TSQuery* q, const TSQueryPredicateStep* steps, u
 		if (cbuild_sv_cmp(node, capt->name) == 0) {
 			cbuild_sv_t ntext = __tshl_capture_get_sv(*capt, text);
 			cbuild_cmd_append_many(&cmd, "nvim", "--clean", "--headless", "-c");
-			cbuild_fd_t rd, wr;
-			if (!cbuild_fd_open_pipe(&rd, &wr)) {
-				cbuild_cmd_clear(&cmd);
-				return false;
-			}
-			const char* op = cbuild_temp_sprintf("echo matchstr(\""CBuildSVFmt"\", '"CBuildSVFmt"')", CBuildSVArg(ntext), CBuildSVArg(pat));
+			const char* op = cbuild_temp_sprintf("lua= vim.fn.matchstr(io.read('*a'), [["CBuildSVFmt"]])", CBuildSVArg(pat));
 			cbuild_cmd_append(&cmd, op);
 			cbuild_cmd_append(&cmd, "+q");
-			if (!cbuild_cmd_run(&cmd, .fdstdout = &wr, .fdstderr = &wr)) {
+			cbuild_fd_t out_rd, out_wr;
+			if (!cbuild_fd_open_pipe(&out_rd, &out_wr)) {
 				cbuild_cmd_clear(&cmd);
 				return false;
 			}
+			cbuild_fd_t in_rd, in_wr;
+			if (!cbuild_fd_open_pipe(&in_rd, &in_wr)) {
+				cbuild_cmd_clear(&cmd);
+				return false;
+			}
+			cbuild_proc_t proc = CBUILD_INVALID_PROC;
+			if (!cbuild_cmd_run(&cmd, .fdstdin = &in_rd, .fdstdout = &out_wr, .fdstderr = &out_wr, .proc = &proc)) {
+				cbuild_cmd_clear(&cmd);
+				cbuild_fd_close(out_rd);
+				cbuild_fd_close(out_wr);
+				return false;
+			}
+			cbuild_fd_close(out_wr);
+			cbuild_fd_close(in_rd);
+			if (cbuild_fd_write(in_wr, ntext.data, ntext.size) < 0) {
+				kill(proc, SIGKILL);
+				cbuild_fd_close(out_rd);
+				cbuild_fd_close(in_rd);
+				cbuild_fd_close(in_wr);
+				return false;
+			}
+			cbuild_fd_close(in_wr);
 			char buff[1025] = {0};
-			if (cbuild_fd_read(rd, buff, 1024) == -1) {
+			if (cbuild_fd_read(out_rd, buff, 1024) == -1) {
 				cbuild_cmd_clear(&cmd);
+				cbuild_fd_close(out_rd);
 				return false;
 			}
+			cbuild_fd_close(out_rd);
 			cbuild_sv_t res = cbuild_sv_from_cstr(buff);
 			cbuild_sv_trim(&res);
 			if (res.size == 0) {
@@ -747,23 +820,43 @@ bool __tshl_predicate_any_vim_match(TSQuery* q, const TSQueryPredicateStep* step
 		if (cbuild_sv_cmp(node, capt->name) == 0) {
 			cbuild_sv_t ntext = __tshl_capture_get_sv(*capt, text);
 			cbuild_cmd_append_many(&cmd, "nvim", "--clean", "--headless", "-c");
-			cbuild_fd_t rd, wr;
-			if (!cbuild_fd_open_pipe(&rd, &wr)) {
-				cbuild_cmd_clear(&cmd);
-				return false;
-			}
-			const char* op = cbuild_temp_sprintf("matchstr(\""CBuildSVFmt"\", '"CBuildSVFmt"')", CBuildSVArg(ntext), CBuildSVArg(pat));
+			const char* op = cbuild_temp_sprintf("lua= vim.fn.matchstr(io.read('*a'), [["CBuildSVFmt"]])", CBuildSVArg(pat));
 			cbuild_cmd_append(&cmd, op);
 			cbuild_cmd_append(&cmd, "+q");
-			if (!cbuild_cmd_run(&cmd, .fdstdout = &wr, .fdstderr = &wr)) {
+			cbuild_fd_t out_rd, out_wr;
+			if (!cbuild_fd_open_pipe(&out_rd, &out_wr)) {
 				cbuild_cmd_clear(&cmd);
 				return false;
 			}
+			cbuild_fd_t in_rd, in_wr;
+			if (!cbuild_fd_open_pipe(&in_rd, &in_wr)) {
+				cbuild_cmd_clear(&cmd);
+				return false;
+			}
+			cbuild_proc_t proc = CBUILD_INVALID_PROC;
+			if (!cbuild_cmd_run(&cmd, .fdstdin = &in_rd, .fdstdout = &out_wr, .fdstderr = &out_wr, .proc = &proc)) {
+				cbuild_cmd_clear(&cmd);
+				cbuild_fd_close(out_rd);
+				cbuild_fd_close(out_wr);
+				return false;
+			}
+			cbuild_fd_close(out_wr);
+			cbuild_fd_close(in_rd);
+			if (cbuild_fd_write(in_wr, ntext.data, ntext.size) < 0) {
+				kill(proc, SIGKILL);
+				cbuild_fd_close(out_rd);
+				cbuild_fd_close(in_rd);
+				cbuild_fd_close(in_wr);
+				return false;
+			}
+			cbuild_fd_close(in_wr);
 			char buff[1025] = {0};
-			if (cbuild_fd_read(rd, buff, 1024) == -1) {
+			if (cbuild_fd_read(out_rd, buff, 1024) == -1) {
 				cbuild_cmd_clear(&cmd);
+				cbuild_fd_close(out_rd);
 				return false;
 			}
+			cbuild_fd_close(out_rd);
 			cbuild_sv_t res = cbuild_sv_from_cstr(buff);
 			cbuild_sv_trim(&res);
 			if (res.size != 0) {
@@ -825,7 +918,7 @@ struct {
 	},
 	{
 		.name = cbuild_sv_from_lit("any-lua-match?"),
-		.eval = __tshl_predicate_lua_match,
+		.eval = __tshl_predicate_any_lua_match,
 	},
 	{
 		.name = cbuild_sv_from_lit("match?"),
@@ -833,7 +926,7 @@ struct {
 	},
 	{
 		.name = cbuild_sv_from_lit("any-match?"),
-		.eval = __tshl_predicate_vim_match,
+		.eval = __tshl_predicate_any_vim_match,
 	},
 	{
 		.name = cbuild_sv_from_lit("vim-match?"),
@@ -841,7 +934,7 @@ struct {
 	},
 	{
 		.name = cbuild_sv_from_lit("any-vim-match?"),
-		.eval = __tshl_predicate_vim_match,
+		.eval = __tshl_predicate_any_vim_match,
 	},
 };
 bool __tshl_eval_predicate(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text, cbuild_sv_t lang) {
@@ -889,7 +982,6 @@ void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, uint32_t
 		}
 		if (!__tshl_load_queries(self, lang)) {
 			cbuild_log_error("Could not load "CBuildSVFmt" queries.", CBuildSVArg(lang));
-			exit(1);
 			cbuild_temp_reset(checkpoint);
 			return;
 		}
