@@ -707,7 +707,7 @@ bool __tshl_predicate_gsub(TSQuery* q, const TSQueryPredicateStep* steps, uint32
 		if (cbuild_sv_cmp(node, capt->name) == 0) {
 			cbuild_sv_t ntext = __tshl_capture_get_sv(*capt, text);
 			cbuild_cmd_append_many(&cmd, "nvim", "--clean", "--headless", "-c");
-			const char* op = cbuild_temp_sprintf("lua= string.gsub(io.read('*a'), [["CBuildSVFmt"]], [["CBuildSVFmt"]])", CBuildSVArg(pat), CBuildSVArg(repl));
+			const char* op = cbuild_temp_sprintf("lua local r = string.gsub(io.read('*a'), [["CBuildSVFmt"]], [["CBuildSVFmt"]]); print(r);", CBuildSVArg(pat), CBuildSVArg(repl));
 			cbuild_cmd_append(&cmd, op);
 			cbuild_cmd_append(&cmd, "+q");
 			cbuild_fd_t out_rd, out_wr;
@@ -746,7 +746,6 @@ bool __tshl_predicate_gsub(TSQuery* q, const TSQueryPredicateStep* steps, uint32
 			cbuild_fd_close(out_rd);
 			cbuild_sv_t res = cbuild_sv_from_cstr(buff);
 			cbuild_sv_trim(&res);
-			cbuild_sv_chop_right_by_delim(&res, '\n');
 			capt->val = __tshl_temp_svdup(res);
 		}
 	}
