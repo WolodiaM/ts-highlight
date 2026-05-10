@@ -18,3 +18,5 @@ Predicates can be treated as small VM with 3 instruction encoding - string, capt
 `eq?` technically has 3 variants. Two of them take one capture and one string. In these cases you need to iterate over all captures and if it is one of captures that is compared, its content is compared to string. If it didn't match - predicate fails. In third case it takes two captures and from what I understand you need to have outer loop that finds all captures with first name and inner that finds all captures with second name and then compare all possible combinations.
 
 `; inherits: <lang a>,<lang b>` allows this query to "inherit" other ones. From what I understand it just append content of that query to this in order. It is often used in languages based on another (like `typescript` inherits `ecma`) or to have "base" query used by multiple other higher-level queries (lie both `html` and `vue` inherits `html_tags`).
+
+It seems like it is an undefined behaviour to use quantified capture in `any-of?`.

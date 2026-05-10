@@ -444,6 +444,21 @@ bool __tshl_predicate_any_contains(TSQuery* q, const TSQueryPredicateStep* steps
 	}
 	return false;
 }
+// Signature 'any-of? [capture] [string...]'
+bool __tshl_predicate_any_of(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text) {
+	int argidx = 1;
+	cbuild_sv_t node = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "any-of?", argidx++);
+	cbuild_da_foreach(*captures, capt) {
+		if (cbuild_sv_cmp(node, capt->name) == 0) {
+			uint32_t ipc = *ip;
+			while (steps[ipc].type != TSQueryPredicateStepTypeDone) {
+				cbuild_sv_t str = __tshl_predicate_get_string(q, steps[ipc++], "any-of?", argidx++);
+				if (cbuild_sv_cmp(__tshl_capture_get_sv(*capt, text), str) == 0) return true;
+			}
+		}
+	}
+	return false;
+}
 struct {
 	cbuild_sv_t name;
 	bool (*eval)(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text);
@@ -468,6 +483,10 @@ struct {
 		.name = cbuild_sv_from_lit("any-contains?"),
 		.eval = __tshl_predicate_any_contains,
 	},
+	{
+		.name = cbuild_sv_from_lit("any-of?"),
+		.eval = __tshl_predicate_any_of,
+	}
 };
 bool __tshl_eval_predicate(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text) {
 	bool ret = true;
