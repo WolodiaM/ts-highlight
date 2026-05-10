@@ -67,6 +67,49 @@ static const char* tshl_query_err_to_str(TSQueryError err) {
 	return NULL;
 }
 #pragma endregion
+typedef cbuild_da_new(cbuild_sv_t) __tshl_da_sv_t;
+cbuild_sv_t __tshl_temp_svdup(cbuild_sv_t sv) {
+	return cbuild_sv_from_parts(
+		cbuild_temp_memdup(sv.data, sv.size),
+		sv.size);
+}
+bool __tshl_inherit_queries(tshl_t* self, cbuild_sb_t* file, size_t offset,
+	__tshl_da_sv_t* loaded, TSLanguage* l) {
+	cbuild_sv_t f = cbuild_sv_from_sb(*file);
+	cbuild_sv_chop(&f, offset);
+	cbuild_sv_trim(&f);
+	cbuild_sv_t line = {0};
+	while (f.size > 0 && f.data[0] == ';') {
+		line = cbuild_sv_chop_by_delim(&f, '\n');
+		cbuild_sv_chop_by_delim(&line, 'i');
+		if (cbuild_sv_prefix(line, cbuild_sv_from_lit("nherits:"))) {
+			cbuild_sv_chop_by_delim(&line, ':');
+			cbuild_sv_trim(&line);
+			while (line.size > 0) {
+				cbuild_sv_t language = cbuild_sv_chop_by_delim(&line, ',');
+				cbuild_sv_trim(&language);
+				if (language.size > 0) {
+					bool skip = false;
+					cbuild_da_foreach(*loaded, lng) {
+						if (cbuild_sv_cmp(*lng, language) == 0) skip = true;
+					}
+					if (skip) continue;
+					cbuild_da_append(loaded, __tshl_temp_svdup(language));
+					const char* q = self->get_query_dir(language);
+					size_t prev_size = file->size;
+					if (!cbuild_file_read(
+							cbuild_temp_sprintf("%s/highlights.scm", q), file)) {
+						return false;
+					}
+					if (!__tshl_inherit_queries(self, file, prev_size, loaded, l)) {
+						return false;
+					}
+				}
+			}
+		}
+	}
+	return true;
+}
 static bool __tshl_load_queries(tshl_t* self, cbuild_sv_t language) {
 	TSLanguage* l = ((__tshl_language_map_entry_t*)cbuild_map_get(&self->languages, language))->lang;
 	const char* q = self->get_query_dir(language);
@@ -76,6 +119,13 @@ static bool __tshl_load_queries(tshl_t* self, cbuild_sv_t language) {
 		cbuild_sb_clear(&file);
 		return false;
 	}
+	__tshl_da_sv_t loaded = {0};
+	cbuild_da_append(&loaded, __tshl_temp_svdup(language));
+	if (!__tshl_inherit_queries(self, &file, 0, &loaded, l)) {
+		cbuild_sb_clear(&file);
+		return false;
+	}
+	cbuild_da_clear(&loaded);
 	uint32_t err_offset = 0;
 	TSQueryError err = TSQueryErrorNone;
 	TSQuery* hl = ts_query_new(l, 

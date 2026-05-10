@@ -4681,13 +4681,13 @@ CBUILDDEF bool cbuild_file_read(const char* path, cbuild_sb_t* data) {
 		return false;
 	}
 	size_t size = (size_t)cbuild_file_len(path);
-	cbuild_sb_resize(data, size); // Assert data != NULL
-	ssize_t len = cbuild_fd_read_file(fd, data->data, size, path);
+	cbuild_sb_resize(data, data->size + size); // Assert data != NULL
+	ssize_t len = cbuild_fd_read_file(fd, data->data + data->size, size, path);
 	if(len < 0) {
 		cbuild_fd_close(fd);
 		return false;
 	}
-	data->size = (size_t)len;
+	data->size += (size_t)len;
 	cbuild_fd_close(fd);
 	return true;
 }
