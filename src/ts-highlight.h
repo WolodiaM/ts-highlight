@@ -6,6 +6,8 @@
 // Includes
 #include "../cbuild.h"
 #include "tree_sitter/api.h"
+#define PCRE2_CODE_UNIT_WIDTH 8
+#include "pcre2.h"
 /// Load parser for specific language
 typedef TSLanguage* (*tshl_load_parser)(cbuild_sv_t language);
 /// Load parser for specific language

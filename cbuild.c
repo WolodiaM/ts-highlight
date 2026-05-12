@@ -17,6 +17,7 @@ int main(int argc, char** argv) {
 			cbuild_cmd_append_many(&cmd, CBUILD_CARGS_WARN);
 			cbuild_cmd_append_many(&cmd, CBUILD_CARGS_DEBUG_GDB);
 			cbuild_cmd_append_many(&cmd, CBUILD_CARGS_LIBINCLUDE("tree-sitter"));
+			cbuild_cmd_append_many(&cmd, CBUILD_CARGS_LIBINCLUDE("pcre2-8"));
 			cbuild_cmd_append_many(&cmd, CBUILD_CARGS_LIBINCLUDE("dl"));
 			cbuild_cmd_append_many(&cmd, "-Wl,-z,origin", "-Wl,-rpath,$ORIGIN");
 			cbuild_cmd_append_many(&cmd, "src/main.c", "src/ts-highlight.c");
