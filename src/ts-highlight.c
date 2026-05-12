@@ -276,6 +276,9 @@ void __tshl_luapat_to_pcre2_escape(cbuild_sb_t* regex, uint32_t cp) {
 		cbuild_sb_append_cstr(regex, "\\$");
 	} else if (cp == uchar('\\')) {
 		cbuild_sb_append_cstr(regex, "\\\\");
+	} else if(cp == uchar('b')) {
+		cbuild_log_error("LUAPAT: '%%b' found!");
+		cbuild_sb_append_utf8(regex, cp);
 	} else {
 		cbuild_sb_append_utf8(regex, cp);
 	}
@@ -494,6 +497,7 @@ bool __tshl_predicate_eq(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t
 				}
 			}
 		}
+		return true;
 	}
 	c1 = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "eq?", 1);
 	if (steps[*ip].type == TSQueryPredicateStepTypeString) {
@@ -505,6 +509,7 @@ bool __tshl_predicate_eq(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t
 				}
 			}
 		}
+		return true;
 	}
 	cbuild_sv_t c2 = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "eq?", 2);
 	cbuild_da_foreach(*captures, capt1) {
@@ -518,6 +523,7 @@ bool __tshl_predicate_eq(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t
 				}
 			}
 		}
+		return true;
 	}
 	return true;
 }
@@ -535,6 +541,7 @@ bool __tshl_predicate_any_eq(TSQuery* q, const TSQueryPredicateStep* steps, uint
 				}
 			}
 		}
+		return false;
 	}
 	c1 = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "any-eq?", 1);
 	if (steps[*ip].type == TSQueryPredicateStepTypeString) {
@@ -546,6 +553,7 @@ bool __tshl_predicate_any_eq(TSQuery* q, const TSQueryPredicateStep* steps, uint
 				}
 			}
 		}
+		return false;
 	}
 	cbuild_sv_t c2 = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "any-eq?", 2);
 	cbuild_da_foreach(*captures, capt1) {
@@ -559,6 +567,7 @@ bool __tshl_predicate_any_eq(TSQuery* q, const TSQueryPredicateStep* steps, uint
 				}
 			}
 		}
+		return false;
 	}
 	return false;
 }
@@ -576,6 +585,7 @@ bool __tshl_predicate_contains(TSQuery* q, const TSQueryPredicateStep* steps, ui
 				}
 			}
 		}
+		return true;
 	}
 	c1 = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "contains?", 1);
 	if (steps[*ip].type == TSQueryPredicateStepTypeString) {
@@ -587,6 +597,7 @@ bool __tshl_predicate_contains(TSQuery* q, const TSQueryPredicateStep* steps, ui
 				}
 			}
 		}
+		return true;
 	}
 	cbuild_sv_t c2 = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "contains?", 2);
 	cbuild_da_foreach(*captures, capt1) {
@@ -600,6 +611,7 @@ bool __tshl_predicate_contains(TSQuery* q, const TSQueryPredicateStep* steps, ui
 				}
 			}
 		}
+		return true;
 	}
 	return true;
 }
@@ -617,6 +629,7 @@ bool __tshl_predicate_any_contains(TSQuery* q, const TSQueryPredicateStep* steps
 				}
 			}
 		}
+		return false;
 	}
 	c1 = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "any-contains?", 1);
 	if (steps[*ip].type == TSQueryPredicateStepTypeString) {
@@ -628,6 +641,7 @@ bool __tshl_predicate_any_contains(TSQuery* q, const TSQueryPredicateStep* steps
 				}
 			}
 		}
+		return false;
 	}
 	cbuild_sv_t c2 = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "any-contains?", 2);
 	cbuild_da_foreach(*captures, capt1) {
@@ -641,6 +655,7 @@ bool __tshl_predicate_any_contains(TSQuery* q, const TSQueryPredicateStep* steps
 				}
 			}
 		}
+		return false;
 	}
 	return false;
 }
@@ -736,7 +751,10 @@ bool __tshl_predicate_lua_match(TSQuery* q, const TSQueryPredicateStep* steps, u
 	PCRE2_SIZE erroffset = 0;
 	pcre2_code* reg = pcre2_compile((PCRE2_SPTR)pat.data, pat.size,
 		PCRE2_UTF | PCRE2_UCP, &err, &erroffset, NULL);
-	if (reg == NULL) return false;
+	if (reg == NULL) {
+		cbuild_sb_clear(&pat);
+		return false;
+	}
 	pcre2_match_data *md = pcre2_match_data_create_from_pattern(reg, NULL);
 	cbuild_da_foreach(*captures, capt) {
 		if (cbuild_sv_cmp(node, capt->name) == 0) {
@@ -764,7 +782,10 @@ bool __tshl_predicate_any_lua_match(TSQuery* q, const TSQueryPredicateStep* step
 	PCRE2_SIZE erroffset = 0;
 	pcre2_code* reg = pcre2_compile((PCRE2_SPTR)pat.data, pat.size,
 		PCRE2_UTF | PCRE2_UCP, &err, &erroffset, NULL);
-	if (reg == NULL) return false;
+	if (reg == NULL) {
+		cbuild_sb_clear(&pat);
+		return false;
+	}
 	pcre2_match_data *md = pcre2_match_data_create_from_pattern(reg, NULL);
 	cbuild_da_foreach(*captures, capt) {
 		if (cbuild_sv_cmp(node, capt->name) == 0) {
@@ -786,56 +807,57 @@ bool __tshl_predicate_any_lua_match(TSQuery* q, const TSQueryPredicateStep* step
 bool __tshl_predicate_gsub(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text, cbuild_sv_t lang) {
 	CBUILD_UNUSED(lang);
 	cbuild_sv_t node = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "gsub!", 1);
-	cbuild_sv_t pat = __tshl_predicate_get_string(q, steps[(*ip)++], "gsub!", 2);
+	cbuild_sv_t pat_arg = __tshl_predicate_get_string(q, steps[(*ip)++], "gsub!", 2);
 	cbuild_sv_t repl = __tshl_predicate_get_string(q, steps[(*ip)++], "gsub!", 3);
-	cbuild_cmd_t cmd = {0};
+	cbuild_sb_t pat = __tshl_luapat_to_pcre2(pat_arg);
+	int err = 0;
+	PCRE2_SIZE erroffset = 0;
+	pcre2_code* reg = pcre2_compile((PCRE2_SPTR)pat.data, pat.size,
+		PCRE2_UTF | PCRE2_UCP, &err, &erroffset, NULL);
+	if (reg == NULL) {
+		cbuild_sb_clear(&pat);
+		return false;
+	}
+	pcre2_match_data *md = pcre2_match_data_create_from_pattern(reg, NULL);
 	cbuild_da_foreach(*captures, capt) {
 		if (cbuild_sv_cmp(node, capt->name) == 0) {
 			cbuild_sv_t ntext = __tshl_capture_get_sv(*capt, text);
-			cbuild_cmd_append_many(&cmd, "nvim", "--clean", "--headless", "-c");
-			const char* op = cbuild_temp_sprintf("lua local r = string.gsub(io.read('*a'), [["CBuildSVFmt"]], [["CBuildSVFmt"]]); print(r);", CBuildSVArg(pat), CBuildSVArg(repl));
-			cbuild_cmd_append(&cmd, op);
-			cbuild_cmd_append(&cmd, "+q");
-			cbuild_fd_t out_rd, out_wr;
-			if (!cbuild_fd_open_pipe(&out_rd, &out_wr)) {
-				cbuild_cmd_clear(&cmd);
-				return false;
+			int res = pcre2_match(reg, (PCRE2_SPTR)ntext.data, ntext.size, 0, 0, md, NULL);
+			if (res >= 0) {
+				cbuild_sb_t new = {0};
+				for (size_t i = 0; i < repl.size; i++) {
+					if (repl.data[i] == '%' && ++i <= repl.size) {
+						// NOTE: This support up to 9 capture groups and group 0 as full match.
+						char digit = repl.data[i];
+						if ('0' <= digit && digit <= '9') {
+							int capt_id = digit - '0';
+							uint32_t ovector_len = pcre2_get_ovector_count(md);
+							PCRE2_SIZE* ovector = pcre2_get_ovector_pointer(md);
+							if ((uint32_t)capt_id >= ovector_len) {
+								cbuild_sb_append(&new, '%');
+								cbuild_sb_append(&new, digit);
+							} else {
+								size_t start = ovector[2*capt_id];
+								size_t end = ovector[2*capt_id+1];
+								cbuild_sv_t capt_sv = cbuild_sv_from_parts(&ntext.data[start], end - start);
+								cbuild_sb_append_sv(&new, capt_sv);
+							}
+						} else {
+							cbuild_sb_append(&new, digit);
+						}
+					} else {
+						cbuild_sb_append(&new, repl.data[i]);
+					}
+				}
+				capt->val = __tshl_temp_svdup(cbuild_sv_from_sb(new));
+				cbuild_sb_clear(&new);
 			}
-			cbuild_fd_t in_rd, in_wr;
-			if (!cbuild_fd_open_pipe(&in_rd, &in_wr)) {
-				cbuild_cmd_clear(&cmd);
-				return false;
-			}
-			cbuild_proc_t proc = CBUILD_INVALID_PROC;
-			if (!cbuild_cmd_run(&cmd, .fdstdin = &in_rd, .fdstdout = &out_wr, .fdstderr = &out_wr, .proc = &proc)) {
-				cbuild_cmd_clear(&cmd);
-				cbuild_fd_close(out_rd);
-				cbuild_fd_close(out_wr);
-				return false;
-			}
-			cbuild_fd_close(out_wr);
-			cbuild_fd_close(in_rd);
-			if (cbuild_fd_write(in_wr, ntext.data, ntext.size) < 0) {
-				kill(proc, SIGKILL);
-				cbuild_fd_close(out_rd);
-				cbuild_fd_close(in_rd);
-				cbuild_fd_close(in_wr);
-				return false;
-			}
-			cbuild_fd_close(in_wr);
-			char buff[1025] = {0};
-			if (cbuild_fd_read(out_rd, buff, 1024) == -1) {
-				cbuild_cmd_clear(&cmd);
-				cbuild_fd_close(out_rd);
-				return false;
-			}
-			cbuild_fd_close(out_rd);
-			cbuild_sv_t res = cbuild_sv_from_cstr(buff);
-			cbuild_sv_trim(&res);
-			capt->val = __tshl_temp_svdup(res);
+			
 		}
 	}
-	cbuild_cmd_clear(&cmd);
+	pcre2_match_data_free(md);
+	pcre2_code_free(reg);
+	cbuild_sb_clear(&pat);
 	return true;
 }
 // TODO: This is pretty huge hack
@@ -1166,18 +1188,18 @@ void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, uint32_t
 			if (predicate != NULL) {
 				valid = __tshl_eval_predicates(inj, predicate, step_count, &captures, text, lang);
 			}
-			if (valid) {
-				cbuild_sv_t inj_lang = {0};
-				cbuild_sv_t inj_text = {0};
-				uint32_t inj_offset = offset;
-				cbuild_da_foreach(captures, capt) {
-					if (cbuild_sv_cmp(capt->name, cbuild_sv_from_lit("injection.language")) == 0) {
-						inj_lang = __tshl_capture_get_sv(*capt, text);
-					} else if (cbuild_sv_cmp(capt->name, cbuild_sv_from_lit("injection.content")) == 0) {
-						inj_offset += capt->start;
-						inj_text = __tshl_capture_get_sv(*capt, text);
-					}
+			cbuild_sv_t inj_lang = {0};
+			cbuild_sv_t inj_text = {0};
+			uint32_t inj_offset = offset;
+			cbuild_da_foreach(captures, capt) {
+				if (cbuild_sv_cmp(capt->name, cbuild_sv_from_lit("injection.language")) == 0) {
+					inj_lang = __tshl_capture_get_sv(*capt, text);
+				} else if (cbuild_sv_cmp(capt->name, cbuild_sv_from_lit("injection.content")) == 0) {
+					inj_offset += capt->start;
+					inj_text = __tshl_capture_get_sv(*capt, text);
 				}
+			}
+			if (valid) {
 				cbuild_sv_trim(&inj_lang);
 				if (cbuild_sv_cmp(inj_lang, cbuild_sv_from_lit("text")) == 0) continue;
 				if (inj_lang.size == 0) continue;

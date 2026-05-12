@@ -23,7 +23,6 @@ It seems like it is an undefined behaviour to use quantified capture in `any-of?
 
 `offset!` seems to always have positive numbers for first two values and negative for next two values.
 
+It seems like `%b` is unused in lua patters which make it possible to implement them on top of PCRE2.
 
 ':echo matchstr("string", "regex")'                   -> Either returns match or empty string
-':lua= string.find("string", "regex")'                -> Either two numbers separated by newline (start and end) or nil
-':lua= string.find("string", "regex", "replacement")' -> String after replacement and number of matches separated by newline.
