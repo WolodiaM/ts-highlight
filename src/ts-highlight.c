@@ -354,6 +354,35 @@ cbuild_sb_t __tshl_luapat_to_pcre2(cbuild_sv_t pat) {
 	}
 	return regex;
 }
+cbuild_sb_t __tshl_vimregex_to_pcre2(cbuild_sv_t pat, uint32_t *pcre2_flags) {
+	cbuild_sb_t ret = {0};
+	if (cbuild_sv_prefix(pat, cbuild_sv_from_lit("\\\\c"))) {
+		*pcre2_flags = PCRE2_CASELESS;
+		cbuild_sv_chop(&pat, 3);
+	}
+	for (size_t i = 0; i < pat.size; i++) {
+		if (pat.data[i] == '\\') {
+			if ((i + 2) >= pat.size) {
+				cbuild_sb_append(&ret, pat.data[i]);
+			} else {
+				if (pat.data[i + 1] == '\\') {
+					char c = pat.data[i + 2];
+					i += 2;
+					if (c == '@' || c == '=') {
+						cbuild_sb_append(&ret, c);
+					} else {
+						cbuild_sb_appendf(&ret, "\\\\%c", c);
+					}
+				} else {
+					cbuild_sb_append(&ret, pat.data[i]);
+				}
+			}
+		} else {
+			cbuild_sb_append(&ret, pat.data[i]);
+		}
+	}
+	return ret;
+}
 ////////////////////////////////////////////////////////////////////////////////
 // Predicate evaluation
 ////////////////////////////////////////////////////////////////////////////////
@@ -741,7 +770,6 @@ bool __tshl_predicate_has_ancestor(TSQuery* q, const TSQueryPredicateStep* steps
 	cbuild_da_clear(&strings);
 	return false;
 }
-// TODO: It should be possible to reimplement lua pattern matching
 bool __tshl_predicate_lua_match(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text, cbuild_sv_t lang) {
 	CBUILD_UNUSED(lang);
 	cbuild_sv_t node = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "lua-match?", 1);
@@ -860,119 +888,68 @@ bool __tshl_predicate_gsub(TSQuery* q, const TSQueryPredicateStep* steps, uint32
 	cbuild_sb_clear(&pat);
 	return true;
 }
-// TODO: This is pretty huge hack
 bool __tshl_predicate_vim_match(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text, cbuild_sv_t lang) {
 	CBUILD_UNUSED(lang);
 	cbuild_sv_t node = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "match?", 1);
-	cbuild_sv_t pat = __tshl_predicate_get_string(q, steps[(*ip)++], "match?", 2);
-	cbuild_cmd_t cmd = {0};
+	cbuild_sv_t pat_arg = __tshl_predicate_get_string(q, steps[(*ip)++], "match?", 2);
+	uint32_t pcre2_flags = 0;
+	cbuild_sb_t pat = __tshl_vimregex_to_pcre2(pat_arg, &pcre2_flags);
+	int err = 0;
+	PCRE2_SIZE erroffset = 0;
+	pcre2_code* reg = pcre2_compile((PCRE2_SPTR)pat.data, pat.size,
+		pcre2_flags | PCRE2_UTF | PCRE2_UCP, &err, &erroffset, NULL);
+	if (reg == NULL) {
+		cbuild_sb_clear(&pat);
+		return false;
+	}
+	pcre2_match_data *md = pcre2_match_data_create_from_pattern(reg, NULL);
 	cbuild_da_foreach(*captures, capt) {
 		if (cbuild_sv_cmp(node, capt->name) == 0) {
 			cbuild_sv_t ntext = __tshl_capture_get_sv(*capt, text);
-			cbuild_cmd_append_many(&cmd, "nvim", "--clean", "--headless", "-c");
-			const char* op = cbuild_temp_sprintf("lua= vim.fn.matchstr(io.read('*a'), [["CBuildSVFmt"]])", CBuildSVArg(pat));
-			cbuild_cmd_append(&cmd, op);
-			cbuild_cmd_append(&cmd, "+q");
-			cbuild_fd_t out_rd, out_wr;
-			if (!cbuild_fd_open_pipe(&out_rd, &out_wr)) {
-				cbuild_cmd_clear(&cmd);
-				return false;
-			}
-			cbuild_fd_t in_rd, in_wr;
-			if (!cbuild_fd_open_pipe(&in_rd, &in_wr)) {
-				cbuild_cmd_clear(&cmd);
-				return false;
-			}
-			cbuild_proc_t proc = CBUILD_INVALID_PROC;
-			if (!cbuild_cmd_run(&cmd, .fdstdin = &in_rd, .fdstdout = &out_wr, .fdstderr = &out_wr, .proc = &proc)) {
-				cbuild_cmd_clear(&cmd);
-				cbuild_fd_close(out_rd);
-				cbuild_fd_close(out_wr);
-				return false;
-			}
-			cbuild_fd_close(out_wr);
-			cbuild_fd_close(in_rd);
-			if (cbuild_fd_write(in_wr, ntext.data, ntext.size) < 0) {
-				kill(proc, SIGKILL);
-				cbuild_fd_close(out_rd);
-				cbuild_fd_close(in_rd);
-				cbuild_fd_close(in_wr);
-				return false;
-			}
-			cbuild_fd_close(in_wr);
-			char buff[1025] = {0};
-			if (cbuild_fd_read(out_rd, buff, 1024) == -1) {
-				cbuild_cmd_clear(&cmd);
-				cbuild_fd_close(out_rd);
-				return false;
-			}
-			cbuild_fd_close(out_rd);
-			cbuild_sv_t res = cbuild_sv_from_cstr(buff);
-			cbuild_sv_trim(&res);
-			if (res.size == 0) {
-				cbuild_cmd_clear(&cmd);
+			int res = pcre2_match(reg, (PCRE2_SPTR)ntext.data, ntext.size, 0, 0, md, NULL);
+			if (res < 0) {
+				pcre2_match_data_free(md);
+				pcre2_code_free(reg);
+				cbuild_sb_clear(&pat);
 				return false;
 			}
 		}
 	}
-	cbuild_cmd_clear(&cmd);
+	pcre2_match_data_free(md);
+	pcre2_code_free(reg);
+	cbuild_sb_clear(&pat);
 	return true;
 }
 bool __tshl_predicate_any_vim_match(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text, cbuild_sv_t lang) {
 	CBUILD_UNUSED(lang);
 	cbuild_sv_t node = __tshl_predicate_get_capture_name(q, steps[(*ip)++], "any-match?", 1);
-	cbuild_sv_t pat = __tshl_predicate_get_string(q, steps[(*ip)++], "any-match?", 2);
-	cbuild_cmd_t cmd = {0};
+	cbuild_sv_t pat_arg = __tshl_predicate_get_string(q, steps[(*ip)++], "any-match?", 2);
+	uint32_t pcre2_flags = 0;
+	cbuild_sb_t pat = __tshl_vimregex_to_pcre2(pat_arg, &pcre2_flags);
+	int err = 0;
+	PCRE2_SIZE erroffset = 0;
+	pcre2_code* reg = pcre2_compile((PCRE2_SPTR)pat.data, pat.size,
+		pcre2_flags | PCRE2_UTF | PCRE2_UCP, &err, &erroffset, NULL);
+	if (reg == NULL) {
+		cbuild_sb_clear(&pat);
+		return false;
+	}
+	pcre2_match_data *md = pcre2_match_data_create_from_pattern(reg, NULL);
 	cbuild_da_foreach(*captures, capt) {
 		if (cbuild_sv_cmp(node, capt->name) == 0) {
 			cbuild_sv_t ntext = __tshl_capture_get_sv(*capt, text);
-			cbuild_cmd_append_many(&cmd, "nvim", "--clean", "--headless", "-c");
-			const char* op = cbuild_temp_sprintf("lua= vim.fn.matchstr(io.read('*a'), [["CBuildSVFmt"]])", CBuildSVArg(pat));
-			cbuild_cmd_append(&cmd, op);
-			cbuild_cmd_append(&cmd, "+q");
-			cbuild_fd_t out_rd, out_wr;
-			if (!cbuild_fd_open_pipe(&out_rd, &out_wr)) {
-				cbuild_cmd_clear(&cmd);
-				return false;
-			}
-			cbuild_fd_t in_rd, in_wr;
-			if (!cbuild_fd_open_pipe(&in_rd, &in_wr)) {
-				cbuild_cmd_clear(&cmd);
-				return false;
-			}
-			cbuild_proc_t proc = CBUILD_INVALID_PROC;
-			if (!cbuild_cmd_run(&cmd, .fdstdin = &in_rd, .fdstdout = &out_wr, .fdstderr = &out_wr, .proc = &proc)) {
-				cbuild_cmd_clear(&cmd);
-				cbuild_fd_close(out_rd);
-				cbuild_fd_close(out_wr);
-				return false;
-			}
-			cbuild_fd_close(out_wr);
-			cbuild_fd_close(in_rd);
-			if (cbuild_fd_write(in_wr, ntext.data, ntext.size) < 0) {
-				kill(proc, SIGKILL);
-				cbuild_fd_close(out_rd);
-				cbuild_fd_close(in_rd);
-				cbuild_fd_close(in_wr);
-				return false;
-			}
-			cbuild_fd_close(in_wr);
-			char buff[1025] = {0};
-			if (cbuild_fd_read(out_rd, buff, 1024) == -1) {
-				cbuild_cmd_clear(&cmd);
-				cbuild_fd_close(out_rd);
-				return false;
-			}
-			cbuild_fd_close(out_rd);
-			cbuild_sv_t res = cbuild_sv_from_cstr(buff);
-			cbuild_sv_trim(&res);
-			if (res.size != 0) {
-				cbuild_cmd_clear(&cmd);
+			int res = pcre2_match(reg, (PCRE2_SPTR)ntext.data, ntext.size, 0, 0, md, NULL);
+			if (res >= 0) {
+				pcre2_match_data_free(md);
+				pcre2_code_free(reg);
+				cbuild_sb_clear(&pat);
 				return true;
 			}
 		}
 	}
-	cbuild_cmd_clear(&cmd);
+	pcre2_match_data_free(md);
+	pcre2_code_free(reg);
+	cbuild_sb_clear(&pat);
 	return false;
 }
 struct {

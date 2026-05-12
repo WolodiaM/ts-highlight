@@ -26,3 +26,19 @@ It seems like it is an undefined behaviour to use quantified capture in `any-of?
 It seems like `%b` is unused in lua patters which make it possible to implement them on top of PCRE2.
 
 ':echo matchstr("string", "regex")'                   -> Either returns match or empty string
+
+### Used regexes
+
+Vim's regex is complex, and implemented only by vim. SO I implemented partial support over pcre2. This section contains some interesting and non-trivial regex found in nvim-treesitter. It sems to default to "very magic" mode, which simplify things a lot.
+
+* `^(!?\\=|-[a-zA-Z]+)$`: This `\\=` is annoying, why not use `*` here.
+* `^[A-Z][A-Za-z_0-9]{2,}$`: Open-ended range `{2,}`.
+* `^assert[A-Za-z_0-9]*|error|info|debug|print|warning|warning_once$`: Just pretty complex regex with `|` in top scope.
+* `/\\*!([a-zA-Z]+:)?re2c`: Optional groups are supported, but this is quite normal, just interesting regex (at first I though that `re2c` have some mening, but it turned out to be just literal text).
+* `(cl:|cffi:)?(with-accessors|with-foreign-objects|let[*]?)`: `[*]` to mask `8`, othervise just set of capture groups.
+* `\\c^Comments$"`: Caseless match (probably ;) ). From what I saw `\\c` is always first two characters
+* `^(:|v-bind|v-|\\@)`: This `\\@` will be tricky.
+* `^[A-Z][A-Z0-9_]+$|^[a-z]{2,3}[A-Z].+$`: Just more complicated regex.
+* `^((GPVAL|MOUSE|FIT)_\\w+|GNUTERM|NaN|VoxelDistance|GridDistance|pi)$`: Nested capture groups (hope pcre2 support this ;) ) and `\\w` (this one seems to supported by pcre2).
+* `^[eE][nN][dD]([dD][oO])?$`: Pretty cool way to do caseless comparison is regex without any special support! Just cool regex, nothing special here.
+* `\\c^(1|on|yes|true|y|0|off|no|false|n|ignore|notfound|.*-notfound)$`: Another `\\c` usage and complex candidates for next entry.

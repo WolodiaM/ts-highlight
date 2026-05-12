@@ -23,9 +23,11 @@ int main(int argc, char** argv) {
 	cbuild_sb_t sb = {0};
 	cbuild_shift(argv, argc);
 	const char* file = cbuild_shift(argv, argc);
+	const char* lang = "markdown";
+	if (argc > 0) lang = cbuild_shift(argv, argc);
 	if (!cbuild_file_read(file, &sb)) return 1;
 	tshl_t tshl = tshl_init(load_parser, get_query_dir);
-	tshl_metadata_t* meta = tshl_highlight(&tshl, cbuild_sv_from_sb(sb), cbuild_sv_from_lit("markdown"));
+	tshl_metadata_t* meta = tshl_highlight(&tshl, cbuild_sv_from_sb(sb), cbuild_sv_from_cstr(lang));
 	enum tshl_style_t curr = meta[0].style[10];
 	printf("Span '");
 	for (size_t i = 0; i < sb.size; i++) {
