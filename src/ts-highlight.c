@@ -577,6 +577,7 @@ bool __tshl_predicate_eq(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t
 // Signature: 'any-eq? [string|capture] [string|capture]'
 bool __tshl_predicate_any_eq(TSQuery* q, const TSQueryPredicateStep* steps, uint32_t* ip, __tshl_captures_t* captures, cbuild_sv_t text, cbuild_sv_t lang, cbuild_sv_t plang) {
 	CBUILD_UNUSED(lang);
+	CBUILD_UNUSED(plang);
 	cbuild_sv_t c1 = {0};
 	if (steps[*ip].type == TSQueryPredicateStepTypeString) {
 		cbuild_sv_t base = __tshl_predicate_get_string(q, steps[(*ip)++], "any-eq?", 1);
@@ -1329,6 +1330,7 @@ const char* tshl_style_to_name(enum tshl_style_t style) {
 	case TSHL_TAG_BUILTIN:                 return "tag.builtin";                 break;
 	case TSHL_TAG_ATTRIBUTE:               return "tag.attribute";               break;
 	case TSHL_TAG_DELIMITER:               return "tag.delimiter";               break;
+	case TSHL_NUM_STYLES: CBUILD_UNREACHABLE("Invalid style."); break;
 	}
 	CBUILD_UNREACHABLE("Invalid style.");
 }

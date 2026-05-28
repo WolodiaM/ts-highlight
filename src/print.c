@@ -251,15 +251,19 @@ tshl_theme_t theme = {
 	},
 	[TSHL_MARKUP_STRONG] = {
 		.bold = TSHL_THEME_TRUE,
+		.nofg = true,
 	},
 	[TSHL_MARKUP_ITALIC] = {
 		.italic = TSHL_THEME_TRUE,
+		.nofg = true,
 	},
 	[TSHL_MARKUP_STRIKETHROUGH] = {
 		.strikethrough = TSHL_THEME_TRUE,
+		.nofg = true,
 	},
 	[TSHL_MARKUP_UNDERLINE] = {
 		.underline = TSHL_THEME_TRUE,
+		.nofg = true,
 	},
 	[TSHL_MARKUP_HEADING] = {
 		.fg = GruvboxGreen,
@@ -290,6 +294,7 @@ tshl_theme_t theme = {
 		.bold = TSHL_THEME_TRUE,
 	},
 	[TSHL_MARKUP_QUOTE] = {
+		.nofg = true,
 	},
 	[TSHL_MARKUP_MATH] = {
 		.fg = GruvboxOrange,
@@ -325,14 +330,17 @@ tshl_theme_t theme = {
 	[TSHL_DIFF_PLUS] = {
 		.bg = GruvboxDarkGreen,
 		.hasbg = true,
+		.nofg = true,
 	},
 	[TSHL_DIFF_MINUS] = {
 		.bg = GruvboxDarkRed,
 		.hasbg = true,
+		.nofg = true,
 	},
 	[TSHL_DIFF_DELTA] = {
 		.bg = GruvboxDarkAqua,
 		.hasbg = true,
+		.nofg = true,
 	},
 	[TSHL_TAG] = {
 		.fg = GruvboxOrange,
