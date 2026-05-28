@@ -126,6 +126,7 @@ typedef struct tshl_metadata_t {
 		TSHL_TAG_BUILTIN,                 // builtin tag names (e.g. HTML5 tags)
 		TSHL_TAG_ATTRIBUTE,               // XML-style tag attributes
 		TSHL_TAG_DELIMITER,               // XML-style tag delimiters
+		TSHL_NUM_STYLES,                  // Count of this enum
 	} style[30];
 	#pragma endregion
 	uint8_t flags;
