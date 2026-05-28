@@ -514,15 +514,29 @@ bool __tshl_predicate_offset(TSQuery* q, const TSQueryPredicateStep* steps, uint
 	cbuild_da_foreach(*captures, capt) {
 		if (cbuild_sv_cmp(c, capt->name) == 0) {
 			cbuild_sv_t t = cbuild_sv_from_parts(&text.data[capt->start], capt->end - capt->start);
-			int st_accum = st_col, end_accum = st_row;
+			int st_accum = 0;
 			for (; st_row > 0; st_row--) {
 				st_accum += ((int)cbuild_sv_chop_by_delim(&t, '\n').size + 1);
 			}
-			st_accum += st_col;
-			for (; end_row < 0; end_row++) {
-				end_accum += ((int)cbuild_sv_chop_right_by_delim(&t, '\n').size + 1);
+			for (; st_col > 0; st_col--) {
+				st_accum += cbuild_sv_utf8cp_len(t);
+				cbuild_sv_chop_utf8(&t);
 			}
-			end_accum += end_col;
+			// NOTE: end_col and end_row are always negative in real queries
+			int end_accum = 0;
+			if (t.data[t.size - 1] == '\n') t.size--;
+			for (; end_row < 0; end_row++) {
+				end_accum -= ((int)cbuild_sv_chop_right_by_delim(&t, '\n').size + 1);
+			}
+			cbuild_sv_t last_line = cbuild_sv_chop_right_by_delim(&t, '\n');
+			size_t len = cbuild_sv_utf8len(last_line);
+			for (size_t i = 0; i < (size_t)((ssize_t)len + end_row); i++) {
+				cbuild_sv_chop_utf8(&last_line);
+			}
+			for (; end_col < 0; end_col++) {
+				end_accum -= cbuild_sv_utf8cp_len(last_line);
+				cbuild_sv_chop_utf8(&last_line);
+			}
 			capt->start = (uint32_t)((int)capt->start + st_accum);
 			capt->end = (uint32_t)((int)capt->end + end_accum);
 		}
@@ -1338,6 +1352,8 @@ const char* tshl_style_to_name(enum tshl_style_t style) {
 #pragma region tshl_name_to_style
 enum tshl_style_t tshl_name_to_style(cbuild_sv_t name) {
 	if (cbuild_sv_cmp(name, cbuild_sv_from_lit("default")) == 0) {
+		return TSHL_DEFAULT;
+	} else if (cbuild_sv_cmp(name, cbuild_sv_from_lit("none")) == 0) {
 		return TSHL_DEFAULT;
 	} else if (cbuild_sv_cmp(name, cbuild_sv_from_lit("variable")) == 0) {
 		return TSHL_VARIABLE;
