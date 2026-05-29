@@ -197,6 +197,7 @@ tshl_t tshl_init(tshl_load_parser lp, tshl_get_query_dir gqd) {
 typedef struct {
 	uint32_t start;
 	uint32_t end;
+	uint32_t idx;
 	uint32_t priority;
 	cbuild_sv_t val; // If data != NULL overrides '[start:end)' range
 	cbuild_sv_t name;
@@ -1101,6 +1102,29 @@ bool __tshl_eval_predicates(TSQuery* q, const TSQueryPredicateStep* steps, uint3
 ////////////////////////////////////////////////////////////////////////////////
 // Parsing + highlight
 ////////////////////////////////////////////////////////////////////////////////
+int __tshl_capture_cmp(const void* e1, const void* e2) {
+	const __tshl_capture_t* a = e1;
+	const __tshl_capture_t* b = e2;
+	if (a->start < b->start) {
+		return -1;
+	} else if (a->start > b->start) {
+		return 1;
+	} else {
+		if (a->end < b->end) {
+			return 1;
+		} else if (a->end > b->end) {
+			return -1;
+		} else {
+			if (a->idx < b->idx) {
+				return -1;
+			} else if (a->idx > b->idx) {
+				return 1;
+			} else {
+				return 0;
+			}
+		}
+	}
+}
 void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, cbuild_sv_t plang, uint32_t offset, tshl_metadata_t* meta) {
 	// Setup
 	size_t checkpoint = cbuild_temp_checkpoint();
@@ -1148,7 +1172,6 @@ void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, cbuild_s
 	__tshl_captures_t captures = {0};
 	ts_query_cursor_exec(c, q->hl, root);
 	while(ts_query_cursor_next_match(c, &match)) {
-		captures.size = 0;
 		for (uint16_t i = 0; i < match.capture_count; i++) {
 			TSQueryCapture capt = match.captures[i];
 			uint32_t name_len = 0;
@@ -1159,6 +1182,7 @@ void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, cbuild_s
 			__tshl_capture_t capture = {
 				.start = start, 
 				.end = end, 
+				.idx = match.pattern_index,
 				.priority = 100,
 				.name = st_name,
 				.node = capt.node,
@@ -1172,19 +1196,21 @@ void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, cbuild_s
 		if (predicate != NULL) {
 			valid = __tshl_eval_predicates(q->hl, predicate, step_count, &captures, text, lang, plang);
 		}
-		if (valid) {
-			cbuild_da_foreach(captures, capt) {
-				if (cbuild_sv_cmp(capt->name, cbuild_sv_from_lit("spell")) == 0) continue;
-				if (cbuild_sv_cmp(capt->name, cbuild_sv_from_lit("nospell")) == 0) continue;
-				if (cbuild_sv_cmp(capt->name, cbuild_sv_from_lit("conceal")) == 0) continue;
-				if (capt->name.data[0] == '_') continue;
-				enum tshl_style_t style = tshl_name_to_style(capt->name);
-				for (uint32_t i = capt->start; i < capt->end; i++) {
-					meta[offset+i].style[capt->priority - 90] = style;
-				}
-			}
+		if (!valid) captures.size -= match.capture_count;
+	}
+	qsort(captures.data, captures.size, sizeof(__tshl_capture_t), __tshl_capture_cmp);
+	cbuild_da_foreach(captures, capt) {
+		if (cbuild_sv_cmp(lang, cbuild_sv_from_lit("yaml")) == 0) printf(CBuildSVFmt"\n", CBuildSVArg(capt->name));
+		if (cbuild_sv_cmp(capt->name, cbuild_sv_from_lit("spell")) == 0) continue;
+		if (cbuild_sv_cmp(capt->name, cbuild_sv_from_lit("nospell")) == 0) continue;
+		if (cbuild_sv_cmp(capt->name, cbuild_sv_from_lit("conceal")) == 0) continue;
+		if (capt->name.data[0] == '_') continue;
+		enum tshl_style_t style = tshl_name_to_style(capt->name);
+		for (uint32_t i = capt->start; i < capt->end; i++) {
+			meta[offset+i].style[capt->priority - 90] = style;
 		}
 	}
+	captures.size = 0;
 	// Injection queries
 	if (q->inj != NULL) {
 		TSQuery* inj = q->inj; // Map may realloc somehow.
@@ -1219,6 +1245,7 @@ void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, cbuild_s
 			// to create "injections buffer" and then collect all injections there, as list of
 			// non-overlapping ranges (but multiple ranges for entry is possible) and then
 			// create new strings if needed and run highlight on these new ranges.
+			// TODO: Need to do same sorting as highlights
 			cbuild_da_foreach(captures, capt) {
 				if (cbuild_sv_cmp(capt->name, cbuild_sv_from_lit("injection.language")) == 0) {
 					inj_lang = __tshl_capture_get_sv(*capt, text);
@@ -1236,6 +1263,7 @@ void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, cbuild_s
 			}
 		}
 	}
+	cbuild_da_clear(&captures);
 	ts_query_cursor_delete(c);
 	ts_tree_delete(tree);
 	cbuild_temp_reset(checkpoint);
