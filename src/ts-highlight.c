@@ -1200,7 +1200,6 @@ void __tshl_highlight(tshl_t* self, cbuild_sv_t text, cbuild_sv_t lang, cbuild_s
 	}
 	qsort(captures.data, captures.size, sizeof(__tshl_capture_t), __tshl_capture_cmp);
 	cbuild_da_foreach(captures, capt) {
-		if (cbuild_sv_cmp(lang, cbuild_sv_from_lit("yaml")) == 0) printf(CBuildSVFmt"\n", CBuildSVArg(capt->name));
 		if (cbuild_sv_cmp(capt->name, cbuild_sv_from_lit("spell")) == 0) continue;
 		if (cbuild_sv_cmp(capt->name, cbuild_sv_from_lit("nospell")) == 0) continue;
 		if (cbuild_sv_cmp(capt->name, cbuild_sv_from_lit("conceal")) == 0) continue;
