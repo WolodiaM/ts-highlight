@@ -16,6 +16,10 @@ Please note, that all both `test` and `run` subcommands expect neovim and nvim-t
 
 ## NOTE
 
+`print.c` uses colors taken directly from [gruvbox.nvim](https://github.com/ellisonleao/gruvbox.nvim), which is licensed under the MIT license.
+
+## NOTE 1
+
 This does not implement everything, it is fast enough and compatible enough for my needs. In future I plan to improve compatibility and correctness, but speed seems fast-enough for me.
 
 Vim regex is supported only partially (mostly unsupported, actually), but this seems enough looking at queries from `nvim-treesitter`. If regex matches all requirements of pcre2 it is supported. Also few quirks are provided for regex found in `nvim-treesitter` repo. Lua patters are also not fully supported, but only missing feature is `%b` which matches balanced parentheses (which seems to not be used and probably are not even needed in treesitter queries).

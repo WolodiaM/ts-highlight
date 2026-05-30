@@ -6,7 +6,7 @@ int main(int argc, char** argv) {
 	cbuild_selfrebuild(argc, argv);
 	cbuild_shift(argv, argc);
 	// TODO: Find proper way to run tests. Probably I need to dump some highlight from neovim and compare them? On same theme? But for now simple manual testing is fine. And I would need custom test-case as random third-party markdowns in repo are not the best thing. Also, text runner should not depend on my neovim install path.
-	const char* op = cbuild_shift_expect(argv, argc, "Subcommand required (one of 'run', 'build').\n");
+	const char* op = cbuild_shift_expect(argv, argc, "Subcommand required (one of 'test', 'print', 'build').\n");
 	cbuild_cmd_t cmd = {0};
 	if (strcmp(op, "test") == 0) {
 		if (cbuild_compare_mtime_many("ts-highlight-test.run", 

@@ -63,11 +63,13 @@ void __tshl_apply_theme_entry(struct tshl_theme_entry_t* curr, struct tshl_theme
 	if (t.bold != TSHL_THEME_UNDEFINED) curr->bold = t.bold;
 	if (t.italic != TSHL_THEME_UNDEFINED) curr->italic = t.italic;
 	if (t.underline != TSHL_THEME_UNDEFINED) curr->underline = t.underline;
+	if (t.hasbg) curr->hasbg = t.hasbg;
+	if (t.nofg) curr->nofg = t.nofg;
 	if (t.hasbg) curr->bg = t.bg;
 	if (!t.nofg) curr->fg = t.fg;
 }
 bool __tshl_write_ansi(struct tshl_theme_entry_t prev, struct tshl_theme_entry_t curr,
-	struct tshl_printer_t printer) {
+	struct tshl_printer_t printer, struct tshl_theme_entry_t def) {
 	if (curr.bold != prev.bold) {
 		if (curr.bold == TSHL_THEME_TRUE) {
 			if (!printer.writecstr(CBUILD_TERM_BOLD, printer.ctx)) return false;
@@ -89,11 +91,11 @@ bool __tshl_write_ansi(struct tshl_theme_entry_t prev, struct tshl_theme_entry_t
 			if (!printer.writecstr(CBUILD_TERM_NUNDERLINE,printer.ctx)) return false;
 		}
 	}
-	if (curr.underline != prev.underline) {
-		if (curr.underline == TSHL_THEME_TRUE) {
+	if (curr.reverse != prev.reverse) {
+		if (curr.reverse == TSHL_THEME_TRUE) {
 			if (!printer.writecstr(CBUILD_TERM_REVERSE, printer.ctx)) return false;
-		} else if (curr.underline == TSHL_THEME_FALSE) {
-			if (!printer.writecstr(CBUILD_TERM_REVERSE,printer.ctx)) return false;
+		} else if (curr.reverse == TSHL_THEME_FALSE) {
+			if (!printer.writecstr(CBUILD_TERM_NREVERSE,printer.ctx)) return false;
 		}
 	}
 	if (curr.strikethrough != prev.strikethrough) {
@@ -104,21 +106,33 @@ bool __tshl_write_ansi(struct tshl_theme_entry_t prev, struct tshl_theme_entry_t
 		}
 	}
 	if (prev.hasbg == curr.hasbg && __tshl_compare_color(prev.bg, curr.bg)) {
-		// Skip this
+		// Skip this, as all color-related things are the same.
 	} else {
-		if (!curr.hasbg) {
-			if (!printer.writecstr(CBUILD_TERM_SGR("49"), printer.ctx)) return false;
-		} else {
+		if (curr.hasbg) {
 			const char* bg = cbuild_temp_sprintf(CBUILD_TERM_SGR("48;2;%u;%u;%u"),
 				curr.bg.r, curr.bg.g, curr.bg.b);
 			if (!printer.writecstr(bg, printer.ctx)) return false;
+		} else {
+			if (def.hasbg) {
+			const char* bg = cbuild_temp_sprintf(CBUILD_TERM_SGR("48;2;%u;%u;%u"),
+				def.bg.r, def.bg.g, def.bg.b);
+			if (!printer.writecstr(bg, printer.ctx)) return false;
+			} else {
+				if (!printer.writecstr(CBUILD_TERM_SGR("49"), printer.ctx)) return false;
+			}
 		}
 	}
 	if (prev.nofg == curr.nofg && __tshl_compare_color(prev.fg, curr.fg)) {
 		// Skip this
 	} else {
 		if (curr.nofg) {
-			if (!printer.writecstr(CBUILD_TERM_SGR("39"), printer.ctx)) return false;
+			if (def.nofg) {
+				if (!printer.writecstr(CBUILD_TERM_SGR("39"), printer.ctx)) return false;
+			} else {
+			const char* fg = cbuild_temp_sprintf(CBUILD_TERM_SGR("38;2;%u;%u;%u"),
+				def.fg.r, def.fg.g, def.fg.b);
+			if (!printer.writecstr(fg, printer.ctx)) return false;
+			}
 		} else {
 			const char* fg = cbuild_temp_sprintf(CBUILD_TERM_SGR("38;2;%u;%u;%u"),
 				curr.fg.r, curr.fg.g, curr.fg.b);
@@ -131,13 +145,13 @@ bool tshl_meta_to_ansi(tshl_metadata_t* metadata, cbuild_sv_t text, tshl_theme_t
 	struct tshl_printer_t printer) {
 	struct tshl_theme_entry_t prev = theme[TSHL_DEFAULT];
 	tshl_metadata_t prev_meta = {0};
-	struct tshl_theme_entry_t curr = {0};
 	size_t checkpoint = cbuild_temp_checkpoint();
+	if (!printer.writecstr(CBUILD_TERM_RESET, printer.ctx)) return false;
 	for (size_t i = 0; i < text.size; i++) {
-		curr = theme[TSHL_DEFAULT];
 		tshl_metadata_t meta = metadata[i];
 		// TODO: Handle 'flags' and 'conceal' when they actually become used by parser
 		if (memcmp(&prev_meta, &meta, sizeof(tshl_metadata_t)) != 0) {
+			struct tshl_theme_entry_t curr = theme[TSHL_DEFAULT];
 			for (size_t j = 0; j < 30; j++) {
 				if (meta.style[j] == TSHL_DEFAULT) continue;
 				struct tshl_theme_entry_t t = theme[meta.style[j]];
@@ -148,16 +162,16 @@ bool tshl_meta_to_ansi(tshl_metadata_t* metadata, cbuild_sv_t text, tshl_theme_t
 			if (curr.italic == TSHL_THEME_UNDEFINED) curr.italic = TSHL_THEME_FALSE;
 			if (curr.underline == TSHL_THEME_UNDEFINED) curr.underline = TSHL_THEME_FALSE;
 			if (curr.strikethrough == TSHL_THEME_UNDEFINED) curr.strikethrough = TSHL_THEME_FALSE;
-			if (!__tshl_write_ansi(prev, curr, printer)) {
+			if (!__tshl_write_ansi(prev, curr, printer, theme[TSHL_DEFAULT])) {
 				cbuild_temp_reset(checkpoint);
 				return false;
 			}
+			prev = curr;
 		}
 		if (!printer.writechar(text.data[i], printer.ctx)) {
 			cbuild_temp_reset(checkpoint);
 			return false;
 		}
-		prev = curr;
 		prev_meta = meta;
 		cbuild_temp_reset(checkpoint);
 	}
